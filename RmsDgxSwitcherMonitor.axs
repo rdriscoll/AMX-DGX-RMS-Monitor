@@ -70,7 +70,7 @@ DEFINE_DEVICE
 (***********************************************************)
 DEFINE_CONSTANT
 
-INTEGER DEBUG_LEVEL																		= 3;
+INTEGER DEBUG_LEVEL																		= 7;
 
 INTEGER DEBUG_LEVEL_QUIET															= 1
 INTEGER DEBUG_LEVEL_STANDARD													= 2
@@ -140,6 +140,11 @@ INTEGER ID_Dgx8																				= 351;		// 0x015F
 INTEGER ID_Dgx16																			= 352;		// 0x0160
 INTEGER ID_Dgx32																			= 353;		// 0x0161
 INTEGER ID_Dgx64																			= 354;		// 0x0162
+
+// Channels 1-64 are input links
+// Channels 101-164 are output links
+INTEGER CH_POWER_SUPPLY_01														= 200;
+INTEGER CH_POWER_SUPPLY_02														= 201;
 
 (***********************************************************)
 (*              DATA TYPE DEFINITIONS GO BELOW             *)
@@ -214,6 +219,7 @@ STRUCTURE RmsDgxInfo
 (***********************************************************)
 DEFINE_VARIABLE
 
+VOLATILE CHAR cBusy = 0;
 VOLATILE CHAR cBufferDGX[MAX_BUFFER_SIZE];
 //VOLATILE CHAR strTest[7][MAX_BUFFER_SIZE];
 VOLATILE CHAR cDgxValueUpdateIndex;
@@ -681,17 +687,25 @@ DEFINE_FUNCTION RequestDgxValuesUpdates()
 		RETURN;
 	}
 	
-	CLEAR_BUFFER cBufferDGX; // hackarama
-	
-	SWITCH (cDgxValueUpdateIndex)
+	IF(LENGTH_STRING(cBufferDGX))
 	{
-		CASE 1: SEND_STRING dvDgxSerial, "$03"; // Control+C to go into DGX_SHELL>
-		CASE 2: SEND_STRING dvDgxSerial, "'show stats', $0d,$0a";
-		CASE 3: SEND_STRING dvDgxSerial, "'bcs ~scri6v3!', $0d,$0a"; // power info
-		CASE 4: SEND_STRING dvDgxSerial, "'bcs ~scri4v3!', $0d,$0a"; // board info
-		DEFAULT: cDgxValueUpdateIndex = 0;
-	}     
-	cDgxValueUpdateIndex++
+		DebugString('RequestDgxValuesUpdates', 'clearing cBufferDGX', DEBUG_LEVEL_STANDARD);
+		CLEAR_BUFFER cBufferDGX; // hackarama
+	}
+	IF(cBusy)
+		DebugString('RequestDgxValuesUpdates', 'Busy', DEBUG_LEVEL_STANDARD);
+	ELSE
+	{
+		SWITCH (cDgxValueUpdateIndex)
+		{
+			CASE 1: SEND_STRING dvDgxSerial, "$03"; // Control+C to go into DGX_SHELL>
+			CASE 2: SEND_STRING dvDgxSerial, "'show stats', $0d,$0a";
+			CASE 3: SEND_STRING dvDgxSerial, "'bcs ~scri6v3!', $0d,$0a"; // power info
+			CASE 4: SEND_STRING dvDgxSerial, "'bcs ~scri4v3!', $0d,$0a"; // board info
+			DEFAULT: cDgxValueUpdateIndex = 0;
+		}     
+		cDgxValueUpdateIndex++
+	}
 
 }
 
@@ -1525,55 +1539,55 @@ DEFINE_FUNCTION NotifyDGXUnlinked(INTEGER nBoard, INTEGER nChan)
 	SEND_STRING 0, "'No link on board ', ITOA(nBoard), ', Channel ', ITOA(nChan)";
 }
 
-DEFINE_FUNCTION RemoveFromDGXBuffer(INTEGER nStartPos, INTEGER nEndPos)
+DEFINE_FUNCTION RemoveFromBuffer(CHAR sTemp[], INTEGER nStartPos, INTEGER nEndPos)
 {
-	cBufferDGX = "LEFT_STRING(cBufferDGX,nStartPos-1), RIGHT_STRING(cBufferDGX, LENGTH_STRING(cBufferDGX)-nEndPos-1)";
+	sTemp = "LEFT_STRING(sTemp,nStartPos-1), RIGHT_STRING(sTemp, LENGTH_STRING(sTemp)-nEndPos-1)";
 }
 
-DEFINE_FUNCTION DiscardFromDGXBuffer(CHAR strTemp[])
+DEFINE_FUNCTION DiscardFromBuffer(CHAR sTemp[], CHAR strTemp[])
 {
-	IF(FIND_STRING(cBufferDGX, strTemp, 1))
-		cBufferDGX = RIGHT_STRING(cBufferDGX, LENGTH_STRING(cBufferDGX)-LENGTH_STRING(strTemp));
+	IF(FIND_STRING(sTemp, strTemp, 1))
+		sTemp = RIGHT_STRING(sTemp, LENGTH_STRING(sTemp)-LENGTH_STRING(strTemp));
 }
 
-DEFINE_FUNCTION	CHAR[MAX_BUFFER_SIZE] ParseDGXSplashScreen(INTEGER nCount, INTEGER nStartPos) // Response from '~scrv?i?!' (verbosity ?, component ?)
+DEFINE_FUNCTION	CHAR[MAX_BUFFER_SIZE] ParseDGXSplashScreen(CHAR sTemp[], INTEGER nCount, INTEGER nStartPos) // Response from '~scrv?i?!' (verbosity ?, component ?)
 // "~scrv3i<n>![<n>:' .. '[<n+1>' (or to end of string)
 {
 	LOCAL_VAR INTEGER nStartPos_ INTEGER nMidPos_;
 	LOCAL_VAR CHAR sTemp_[MAX_BUFFER_SIZE];
 	// Remove '~scrv*i*!'
 	sTemp_ = "'~scr'"; 
-	nStartPos_ = FIND_STRING(cBufferDGX, sTemp_, nStartPos);
+	nStartPos_ = FIND_STRING(sTemp, sTemp_, nStartPos);
 	IF(nStartPos_) // Found '~scr'
 	{
 		nMidPos_ = nStartPos_+LENGTH_STRING(sTemp_);
 		sTemp_ = "'['"; 
-		nMidPos_ = FIND_STRING(cBufferDGX, sTemp_, nMidPos_);
+		nMidPos_ = FIND_STRING(sTemp, sTemp_, nMidPos_);
 		IF(!nMidPos_)
 		{
 			sTemp_ = "'!'"; 
-			nMidPos_ = FIND_STRING(cBufferDGX, sTemp_, nStartPos_);
+			nMidPos_ = FIND_STRING(sTemp, sTemp_, nStartPos_);
 		}
 		IF(nMidPos_ >= nStartPos_ + 9);//LENGTH_STRING('~scrv*i*!'))
 		{
 			IF((nMidPos_ - nStartPos_) < 20) // just make sure we don't delete an entire section
-				RemoveFromDGXBuffer(nStartPos_, nMidPos_-2); // don't remove the '['
+				RemoveFromBuffer(sTemp, nStartPos_, nMidPos_-2); // don't remove the '['
 		}
 	}
 	// Remove section from '[n:'...'['
 	sTemp_ = "'[', ITOA(nCount)	,':'"; 
 	IF(!nStartPos_)
 		nStartPos_ = 1;
-	nStartPos_ = FIND_STRING(cBufferDGX, sTemp_, nStartPos_);
+	nStartPos_ = FIND_STRING(sTemp, sTemp_, nStartPos_);
 	IF(nStartPos_) // Found strTemp_
 	{
 		nMidPos_ = nStartPos_+LENGTH_STRING(sTemp_);
 		sTemp_ = "'[', ITOA(nCount+1)	,':'"; 
-		nMidPos_ = FIND_STRING(cBufferDGX, sTemp_, nMidPos_);
+		nMidPos_ = FIND_STRING(sTemp, sTemp_, nMidPos_);
 		IF(!nMidPos_)
-			nMidPos_ = LENGTH_STRING(cBufferDGX)+1;
-		sTemp_ = MID_STRING(cBufferDGX, nStartPos_, nMidPos_-nStartPos_-1);
-		RemoveFromDGXBuffer(nStartPos_, nMidPos_-2); // don't remove the '['
+			nMidPos_ = LENGTH_STRING(sTemp)+1;
+		sTemp_ = MID_STRING(sTemp, nStartPos_, nMidPos_-nStartPos_-1);
+		RemoveFromBuffer(sTemp, nStartPos_, nMidPos_-2); // don't remove the '['
 		RETURN sTemp_;
 	}
 	ELSE RETURN '';
@@ -1715,25 +1729,27 @@ DEFINE_FUNCTION ParseDGXSplashScreen6(CHAR sTemp[]) // ~scrv3i6! [6:Power System
 
 // can't just pick a sub string out because there is no guarantee of the next 
 	sTemp_ = '[ac power slot 1] good'
-	nVal_ = (FIND_STRING(sTemp_,sTemp_,1) != 0);
-	DebugVal("'PowerSupply[1] in'", nVal_, DEBUG_LEVEL_CHATTY);
-	DebugVal("'PowerSupply[1] cur'", DgxDeviceInfo.PowerSupply[1], DEBUG_LEVEL_CHATTY);
+	nVal_ = (FIND_STRING(sTemp, sTemp_,1) != 0);
+	//DebugVal("'PowerSupply[1] in'", nVal_, DEBUG_LEVEL_CHATTY);
+	//DebugVal("'PowerSupply[1] cur'", DgxDeviceInfo.PowerSupply[1], DEBUG_LEVEL_CHATTY);
 	IF(DgxDeviceInfo.PowerSupply[1] != nVal_)
 	{
-		DebugVal('ParseDGXData: PowerSupply[1]', DgxDeviceInfo.PowerSupply[1], DEBUG_LEVEL_STANDARD);
+		DebugVal('ParseDGXData: PowerSupply[1]', DgxDeviceInfo.PowerSupply[1], DEBUG_LEVEL_CHATTY);
 		DgxDeviceInfo.PowerSupply[1] = TYPE_CAST(nVal_);
 		DgxAssetParameterSetValueBoolean(assetClientKey, 'asset.power.supply.1', DgxDeviceInfo.PowerSupply[1]);
+		[vdvDEV, CH_POWER_SUPPLY_01] = DgxDeviceInfo.PowerSupply[2];
 	}
 
 	sTemp_ = '[ac power slot 2] good'
-	nVal_ = (FIND_STRING(sTemp,sTemp_,1) != 0);
-	DebugVal("'PowerSupplyX[2] in'", nVal_, DEBUG_LEVEL_STANDARD);
-	DebugVal("'PowerSupply[2] cur'", DgxDeviceInfo.PowerSupply[2], DEBUG_LEVEL_STANDARD);
+	nVal_ = (FIND_STRING(sTemp, sTemp_,1) != 0);
+	//DebugVal("'PowerSupply[2] in'", nVal_, DEBUG_LEVEL_STANDARD);
+	//DebugVal("'PowerSupply[2] cur'", DgxDeviceInfo.PowerSupply[2], DEBUG_LEVEL_STANDARD);
 	IF(DgxDeviceInfo.PowerSupply[2] != nVal_)
 	{
 		DebugVal('ParseDGXData: PowerSupply[2]', DgxDeviceInfo.PowerSupply[2], DEBUG_LEVEL_CHATTY);
 		DgxDeviceInfo.PowerSupply[2] = TYPE_CAST(nVal_);
 		DgxAssetParameterSetValueBoolean(assetClientKey, 'asset.power.supply.2', DgxDeviceInfo.PowerSupply[2]);
+		[vdvDEV, CH_POWER_SUPPLY_02] = DgxDeviceInfo.PowerSupply[2];
 	}
 }
 
@@ -1807,31 +1823,50 @@ DEFINE_FUNCTION ParseDGXSplashScreen7(CHAR sTemp[]) // ~scrv3i7! [7:System Senso
 }
 
 
-DEFINE_FUNCTION ParseDGXBCPU()
+DEFINE_FUNCTION ParseDGXBCPU(CHAR sTemp[])
 {
-	STACK_VAR CHAR cCount_ INTEGER nMidPos_ INTEGER nStartPos_ INTEGER nTemp_;
+	STACK_VAR CHAR cCount_ CHAR cBoard_ INTEGER nMidPos_ INTEGER nStartPos_ INTEGER nTemp_;
 	STACK_VAR CHAR sTemp_[100] CHAR sTemp2_[MAX_BUFFER_SIZE] CHAR sTemp3_[50];
 	// Remove section from 'BCPU<n>:'...'BCPU<n+1>'
 	nStartPos_ = 1;
 	sTemp_ = "'BCPU'";
-	nStartPos_ = FIND_STRING(cBufferDGX, sTemp_, nStartPos_);
-	WHILE(nStartPos_) // Found strTemp_
+	nStartPos_ = FIND_STRING(sTemp, sTemp_, nStartPos_); // loc 'B'
+	WHILE(nStartPos_) // Found 'BCPU'
 	{
-		nMidPos_ = nStartPos_+LENGTH_STRING(sTemp_);
-		sTemp2_ = RIGHT_STRING(cBufferDGX, LENGTH_STRING(cBufferDGX)-nMidPos_+1);
-		cCount_ = ATOI(sTemp2_);
-		DebugVal('ParseDGXBCPU cCount_', cCount_, DEBUG_LEVEL_SUPER_CHATTY);
-		sTemp3_ = "'BCPU', ITOA(cCount_+1)	,':'"; 
-		nMidPos_ = FIND_STRING(cBufferDGX, sTemp3_, nMidPos_);
-		IF(!nMidPos_)
-			nMidPos_ = LENGTH_STRING(cBufferDGX)+1;
-		//nTemp_ = LENGTH_STRING("'BCPU', ITOA(cCount_)	,':'");
-		nTemp_ = 6; // LENGTH_STRING("'BCPU', ITOA(cCount_)	,':'");
-		sTemp2_ = MID_STRING(cBufferDGX, nStartPos_+nTemp_, nMidPos_-nStartPos_-nTemp_-1);
+		nMidPos_ = nStartPos_+LENGTH_STRING(sTemp_); // char after 'BCPU'
+		sTemp2_ = RIGHT_STRING(sTemp, LENGTH_STRING(sTemp)-nMidPos_+1); //  everything after 'BCPU'
+		cBoard_ = ATOI(sTemp2_); // board number
+		//DebugVal('ParseDGXBCPU cBoard_', cBoard_, DEBUG_LEVEL_SUPER_CHATTY);
+		nMidPos_ = FIND_STRING(sTemp, sTemp_, nMidPos_); // find next board
+		IF(!nMidPos_)	// no next board
+		{
+			sTemp3_ = "'CENTER:'";
+			nMidPos_ = nStartPos_+LENGTH_STRING(sTemp_); // char after 'BCPU'
+			nMidPos_ = FIND_STRING(sTemp, sTemp3_, nMidPos_); // find next board
+			IF(!nMidPos_)	// no next board
+			{
+				sTemp3_ = "'PPIC:'";
+				nMidPos_ = nStartPos_+LENGTH_STRING(sTemp_); // char after 'BCPU'
+				nMidPos_ = FIND_STRING(sTemp, sTemp3_, nMidPos_); // find next board
+				IF(!nMidPos_)	// no next board
+				{
+					IF(!nMidPos_)	// no next board
+						nMidPos_ = LENGTH_STRING(sTemp)+1;	// just read until the end of the string 
+				}
+			}
+		}//nTemp_ = LENGTH_STRING("'BCPU', ITOA(cBoard_)	,':'");
+		nTemp_ = 6; // LENGTH_STRING("'BCPU', ITOA(cBoard_)	,':'");
+		sTemp2_ = MID_STRING(sTemp, nStartPos_+nTemp_, nMidPos_-nStartPos_-nTemp_-1); // everything between 'BCPU' and the next 'BCPU'
 		//DebugString("'ParseDGXBCPU'", sTemp2_, DEBUG_LEVEL_SUPER_CHATTY);
-		ParseDGXBCPUNumber(sTemp2_, cCount_);
-		RemoveFromDGXBuffer(nStartPos_, nMidPos_-2); // don't remove the 'B'
-		nStartPos_ = FIND_STRING(cBufferDGX, sTemp_, 1);
+		ParseDGXBCPUNumber(sTemp2_, cBoard_); // parse this BCPU board string
+		RemoveFromBuffer(sTemp, nStartPos_, nMidPos_-2); // remove this board data from string, don't remove the 'B'
+		nStartPos_ = FIND_STRING(sTemp, sTemp_, 1); // look for the next 'BCPU'
+		cCount_++;
+		IF(cCount_ > 128) // stop infinite loops (128 would be for a fully populated DGX64)
+		{
+			nStartPos_ = 0;
+			DebugString("'ParseDGXBCPU loop ERROR'", 'Exiting', DEBUG_LEVEL_STANDARD);
+		}
 	}
 }
 
@@ -1839,7 +1874,7 @@ DEFINE_FUNCTION ParseDGXBCPUNumber(CHAR sTemp[], CHAR cBoard)
 {
 	STACK_VAR CHAR sTemp_[MAX_BUFFER_SIZE] CHAR sTemp2_[100];
 	STACK_VAR CHAR cCount_ CHAR cLinked_ CHAR cOutputBoardNum_ CHAR cIsInputBoard_;
-	DebugVal('ParseDGXBCPUNumber', cBoard, DEBUG_LEVEL_SUPER_CHATTY);
+	//DebugVal('ParseDGXBCPUNumber', cBoard, DEBUG_LEVEL_SUPER_CHATTY);
 	//DebugString("'ParseDGXBCPUNumber', ITOA(cBoard)", sTemp, DEBUG_LEVEL_SUPER_CHATTY);
 /*
 BCPU1:
@@ -1864,7 +1899,7 @@ BCPU1:
 	{
 		//DebugVal("'Channel'", TYPE_CAST(cCount_), DEBUG_LEVEL_STANDARD);
 		sTemp_ = GetSubString(sTemp, "'Ch',ITOA(cCount_),'-Unlinked.'", "$0d", REMOVE_DATA_INC_SEARCH); //Ch1-[DxLink In] BER Video:10^(-10), Audio:10^(-10), Blank:10^(-10), Ctrl:10^(-10)
-		DebugString("'sTemp_'", sTemp_, DEBUG_LEVEL_CHATTY);
+		//DebugString("'sTemp_'", sTemp_, DEBUG_LEVEL_CHATTY);
 		cLinked_ = (LENGTH_STRING(sTemp_) != 0); // *** should be a ! ***
 		IF(cLinked_) // linked
 		{
@@ -1887,7 +1922,7 @@ BCPU1:
 			IF(DgxDeviceInfo.uInputBoard[cBoard].uChannel[cCount_].cLink <> cLinked_)
 			{
 				DgxDeviceInfo.uInputBoard[cBoard].uChannel[cCount_].cLink = cLinked_;
-				DebugVal("sTemp2_,'-update'", TYPE_CAST(cLinked_), DEBUG_LEVEL_STANDARD);
+				//DebugVal("sTemp2_", TYPE_CAST(cLinked_), DEBUG_LEVEL_STANDARD);
 				DgxAssetParameterSetValueNumber(assetClientKey, 
 																				"'switcher.input.video.board.', ITOA(cBoard), '.input.', ITOA(cCount_)",
 																				DgxDeviceInfo.uInputBoard[cBoard].uChannel[cCount_].cLink);
@@ -1908,10 +1943,11 @@ BCPU1:
 				IF(DgxDeviceInfo.uOutputBoard[cOutputBoardNum_].uChannel[cCount_].cLink <> cLinked_)
 				{
 					DgxDeviceInfo.uOutputBoard[cOutputBoardNum_].uChannel[cCount_].cLink = cLinked_;
-					DebugVal("sTemp2_,'-update'", TYPE_CAST(cLinked_), DEBUG_LEVEL_STANDARD);
+					//DebugVal("sTemp2_,'-update'", TYPE_CAST(cLinked_), DEBUG_LEVEL_STANDARD);
 					DgxAssetParameterSetValueNumber(assetClientKey, 
 																					"'switcher.output.video.board.', ITOA(cOutputBoardNum_), '.output.', ITOA(cCount_)",
 																					DgxDeviceInfo.uOutputBoard[cOutputBoardNum_].uChannel[cCount_].cLink);
+					[vdvDEV, 100+(cOutputBoardNum_-1)*4+cCount_] = DgxDeviceInfo.uOutputBoard[cOutputBoardNum_].uChannel[cCount_].cLink; // feedback. Channels 101 - 64 are input board link status
 				}
 			}
 		}
@@ -1930,13 +1966,17 @@ DEFINE_FUNCTION ParseDGXData()
 {
 	STACK_VAR INTEGER nStartPos_ INTEGER nMidPos_  INTEGER nEndPos_;
 	STACK_VAR CHAR strTemp_[MAX_BUFFER_SIZE] CHAR strTemp2_[100] CHAR strTemp3_[50] CHAR cCount_;
+	STACK_VAR CHAR sBuffer_[MAX_BUFFER_SIZE];
 	LOCAL_VAR INTEGER nBufferSize;
-	DebugString('ParseDGXData', cBufferDGX, DEBUG_LEVEL_SUPER_CHATTY);
-	WHILE(LENGTH_STRING(cBufferDGX))
+	sBuffer_ = cBufferDGX;
+	CLEAR_BUFFER cBufferDGX;
+	DebugString('ParseDGXData', sBuffer_, DEBUG_LEVEL_SUPER_CHATTY);
+	cBusy = 1;
+	WHILE(LENGTH_STRING(sBuffer_))
 	{
 		FOR(cCount_= 1; cCount_ < 8; cCount_++)
 		{
-			strTemp_ = ParseDGXSplashScreen(cCount_, 1); // ~scrv3i?!
+			strTemp_ = ParseDGXSplashScreen(sBuffer_, cCount_, 1); // ~scrv3i?!
 			IF(LENGTH_STRING(strTemp_))
 			{
 				SWITCH(cCount_)
@@ -1952,48 +1992,48 @@ DEFINE_FUNCTION ParseDGXData()
 			}
 		}
 		
-		ParseDGXBCPU();
+		ParseDGXBCPU(sBuffer_);
 	
 	/***********************************************************************************
 	 DGX_SHELL>
 	***********************************************************************************
 	*/
 		strTemp_ = 'MCPU:';
-		nStartPos_ = FIND_STRING(cBufferDGX, strTemp_, 1);
+		nStartPos_ = FIND_STRING(sBuffer_, strTemp_, 1);
 		IF(nStartPos_) // Found strTemp_
 		{
 			nMidPos_ = nStartPos_+LENGTH_STRING(strTemp_);
 			nEndPos_ = nMidPos_;
 			strTemp_ = 'BCPU';
-			nEndPos_ = FIND_STRING(cBufferDGX, strTemp_, nEndPos_);
+			nEndPos_ = FIND_STRING(sBuffer_, strTemp_, nEndPos_);
 			IF(!nEndPos_)
-				nEndPos_ = LENGTH_STRING(cBufferDGX);
-			RemoveFromDGXBuffer(nStartPos_,nEndPos_-1);
+				nEndPos_ = LENGTH_STRING(sBuffer_);
+			RemoveFromBuffer(sBuffer_, nStartPos_,nEndPos_-1);
 		}
 			
 		strTemp_ = "'DGX_SHELL>'";
-		DiscardFromDGXBuffer(strTemp_);
+		DiscardFromBuffer(sBuffer_, strTemp_);
 		strTemp_ = "'Shell input timeout.  Resume BCS.',$0D,$0A";
-		DiscardFromDGXBuffer(strTemp_);
+		DiscardFromBuffer(sBuffer_, strTemp_);
 		strTemp_ = "'Command not found.',$0D,$0A";
-		DiscardFromDGXBuffer(strTemp_);
+		DiscardFromBuffer(sBuffer_, strTemp_);
 		strTemp_ = "'bcs'";	
-		DiscardFromDGXBuffer(strTemp_);
+		DiscardFromBuffer(sBuffer_, strTemp_);
 	
 		//IF(LENGTH_STRING(cBufferDGX))
 		//	DebugString('Unparsed data', cBufferDGX, DEBUG_LEVEL_SUPER_CHATTY);
 	
 		strTemp_ = "'~scr'"; 
-		nStartPos_ = FIND_STRING(cBufferDGX, strTemp_, 1);
+		nStartPos_ = FIND_STRING(sBuffer_, strTemp_, 1);
 		IF(nStartPos_)
 		{
 			strTemp_ = "'!'"; 
-			nMidPos_ = FIND_STRING(cBufferDGX, strTemp_, nStartPos_)
+			nMidPos_ = FIND_STRING(sBuffer_, strTemp_, nStartPos_)
 			IF(nMidPos_)
-				RemoveFromDGXBuffer(nStartPos_, nMidPos_);
+				RemoveFromBuffer(sBuffer_, nStartPos_, nMidPos_);
 		}
 	
-		RemoveLeadingNonPrintable(cBufferDGX);
+		RemoveLeadingNonPrintable(sBuffer_);
 	
 /*	
 		// this could remove useful data but we need to empty the buffer of unparsed data.
@@ -2003,14 +2043,16 @@ DEFINE_FUNCTION ParseDGXData()
 */
 
 	// If the buffer hasn't changed size since the last pass then the remaining data in the buffer must be unhandled data so ditch it to terminate the loop
-		nEndPos_ = LENGTH_STRING(cBufferDGX);
+		nEndPos_ = LENGTH_STRING(sBuffer_);
 		IF(nBufferSize == nEndPos_)
-			CLEAR_BUFFER cBufferDGX;
+			//CLEAR_BUFFER cBufferDGX;
+			sBuffer_ = '';
 		ELSE
 			nBufferSize = nEndPos_;
 		
 	}
 	DebugString('Finished parsing data', cBufferDGX, DEBUG_LEVEL_SUPER_CHATTY);
+	cBusy = 0;
 }
 
 DEFINE_FUNCTION RemoveLeadingNonPrintable(CHAR sString[])
@@ -2190,7 +2232,12 @@ DATA_EVENT[dvDgxSerial]
 	{
 		CANCEL_WAIT 'DATA IN';
 		WAIT 5 'DATA IN'
-			ParseDGXData();
+		{
+			IF(!cBusy)
+				ParseDGXData();
+			ELSE
+				DebugString('Busy', 'not processing cBufferDGX', DEBUG_LEVEL_STANDARD);
+		}
 		IF(LENGTH_STRING(cBufferDGX) > MAX_LENGTH_STRING(cBufferDGX)-10)
 		{
 			DebugVal('Clearing full cBufferDGX', LENGTH_STRING(cBufferDGX), DEBUG_LEVEL_STANDARD);
@@ -2209,18 +2256,24 @@ BUTTON_EVENT[vdvDEV, 0] // testing
 			SWITCH(BUTTON.INPUT.CHANNEL)
 			{
 				//CASE 1-7: // send "'~scri1v3!'";
-				//CASE 10: // Get BCPU data (channels linked)
+				//CASE 8: // Get BCPU data (channels linked)
+				//CASE 9: // pause timeline
+				//CASE 10: // restart timeline
 				//CASE 11-17: // emulate "'~scri1v3!'";
+				//CASE 18: // emulate BCPU command
+				//CASE 19: // go back to bcs shell - so you can cend ~scr commands		
 				//CASE 20: // leave bcs shell-	so you can send BCPU commands			
-				//CASE 30: // go back to bcs shell - so you can cend ~scr commands		
-				//CASE 40: // emulate BCPU command
-				
-				CASE 10: // Get BCPU data (channels linked)
+				//CASE 21-27: // emulate "'~scri1v3!'"; with different results
+				//CASE 28: // emulate BCPU command
+				       
+				CASE 8: // Get BCPU data (channels linked)
 				{
 					SEND_STRING dvDgxSerial, "$03"; // Control+C to go into DGX_SHELL>
 					WAIT 1
 						SEND_STRING dvDgxSerial, "'show stats',$0d,$0a";
 				}
+				CASE 9: TIMELINE_PAUSE(TL_MONITOR);
+				CASE 10: TIMELINE_RESTART(TL_MONITOR);
 				CASE 11:// SEND_STRING dvDgxSerial, "'~scri1v3!'";
 				{ // LEN=120
 					cBufferDGX = "'~scrv3i1!',$0d,$0a,
@@ -2373,8 +2426,7 @@ BUTTON_EVENT[vdvDEV, 0] // testing
 																$09,$09,'[fan 2 speed] 1477 rpm',$0d,$0a";
 					ParseDGXData();
 				}
-				CASE 30: SEND_STRING dvDgxSerial, "'bcs',$0d,$0a"; // go back to bcs shell				
-				CASE 40: // emulate BCPU command
+				CASE 18: // emulate BCPU command
 				{
 					cBufferDGX = "'show stats',$0d,$0a,
 												'MCPU:',$0d,$0a,
@@ -2456,6 +2508,203 @@ BUTTON_EVENT[vdvDEV, 0] // testing
 												$0d,$0a,'DGX_SHELL>'"
 					ParseDGXData();
 				} 
+				CASE 19: SEND_STRING dvDgxSerial, "'bcs',$0d,$0a"; // go back to bcs shell				
+				CASE 20: SEND_STRING dvDgxSerial, "$0c"; // leave bcs shell				
+				CASE 24:// SEND_STRING dvDgxSerial, "'~scri4v3!'";
+				{
+					cBufferDGX = "'~scrv3i4!',$0d,$0a,
+												'[4:Hardware Boards] detected',$0d,$0a,
+												'[switching drivers] count = 1',$0d,$0a,
+												'[mtx driver 1.1] 16x16 switching driver',$0d,$0a,
+												'[revision] 0x05',$0d,$0a,
+												'[mtx driver 1.2] 16x16 switching driver',$0d,$0a,
+												'[revision] 0x05',$0d,$0a,
+												'[input boards] count = 2',$0d,$0a,
+												'[board 1] 0000',$0d,$0a,
+												'[board 2] 0000',$0d,$0a,
+												'[output boards] count = 2',$0d,$0a,
+												'[board 3] c0e0',$0d,$0a,
+												'[board 4] c0e0',$0d,$0a"
+					ParseDGXData();
+				}
+				CASE 25:// SEND_STRING dvDgxSerial, "'~scri5v3!'";
+				{
+					cBufferDGX = "'~scri5v3!',$0d,$0a,
+												'[5:VM Configuration] count = 2',$0d,$0a,
+												'[vm 0] "All" 32x32x1',$0d,$0a,
+												'[vm 1] "Video" 32x32x1',$0d,$0a,
+												'[vm 0 master] 0x11000 master 0 0 1 (self)',$0d,$0a,
+												'[vm 1 master] 0x11000 master 0 0 1 (self)',$0d,$0a"
+					ParseDGXData();
+				}
+				CASE 26:// SEND_STRING dvDgxSerial, "'~scri6v3!'"; power 1 is gone
+				{
+					cBufferDGX = "'~scrv3i6!',$0d,$0a,
+												'[6:Power System] good',$0d,$0a,
+														$09,'[status flags] 0x0000',$0d,$0a,
+														$09,'[available system power] 1870w',$0d,$0a,
+														$09,'[required system power] 468w',$0d,$0a,
+														$09,'[ac power slot 2] good',$0d,$0a,
+																$09,$09,'[status flags] 0x00',$0d,$0a,
+																$09,$09,'[available power] 936w',$0d,$0a,
+																$09,$09,'[output power] 33.01w',$0d,$0a,
+																$09,$09,'[voltage] 12.00v',$0d,$0a,
+																$09,$09,'[current] 2.75a',$0d,$0a,
+																$09,$09,'[fan speed] 9600 rpm',$0d,$0a,
+																$09,$09,'[service hours] 100000',$0d,$0a,
+																$09,$09,'[model #] CAR0812FPBXZ01A',$0d,$0a,
+																$09,$09,'[serial #] ZB90653',$0d,$0a,
+																$09,$09,'[revision] A',$0d,$0a,
+														$09,'[dc controller 1] good',$0d,$0a,
+																$09,$09,'[status flags] 0x0000',$0d,$0a,
+																$09,$09,'[io board 1 pol 1] good',$0d,$0a,
+																		$09,$09,$09,'[status flags] 0x00',$0d,$0a,
+																		$09,$09,$09,'[voltage] 4.94v',$0d,$0a,
+																		$09,$09,$09,'[current] 1.40a',$0d,$0a,
+																		$09,$09,$09,'[temp] 43.8c',$0d,$0a,
+																$09,$09,'[io board 2 pol 1] good',$0d,$0a,
+																		$09,$09,$09,'[status flags] 0x00',$0d,$0a,
+																		$09,$09,$09,'[voltage] 4.94v',$0d,$0a,
+																		$09,$09,$09,'[current] 1.40a',$0d,$0a,
+																		$09,$09,$09,'[temp] 43.8c',$0d,$0a,
+																$09,$09,'[io board 3 pol 1] good',$0d,$0a,
+																		$09,$09,$09,'[status flags] 0x00',$0d,$0a,
+																		$09,$09,$09,'[voltage] 4.94v',$0d,$0a,
+																		$09,$09,$09,'[current] 1.40a',$0d,$0a,
+																		$09,$09,$09,'[temp] 43.8c',$0d,$0a,
+																$09,$09,'[io board 4 pol 1] good',$0d,$0a,
+																		$09,$09,$09,'[status flags] 0x00',$0d,$0a,
+																		$09,$09,$09,'[voltage] 2.42v',$0d,$0a,
+																		$09,$09,$09,'[current] 1.53a',$0d,$0a,
+																		$09,$09,$09,'[temp] 34.0c',$0d,$0a,
+																$09,$09,'[io board 4 pol 2] good',$0d,$0a,
+																		$09,$09,$09,'[status flags] 0x00',$0d,$0a,
+																		$09,$09,$09,'[voltage] 3.85v',$0d,$0a,
+																		$09,$09,$09,'[current] 1.53a',$0d,$0a,
+																		$09,$09,$09,'[temp] 34.0c',$0d,$0a,
+																$09,$09,'[center board 1 pol 1] good',$0d,$0a,
+																		$09,$09,$09,'[status flags] 0x00',$0d,$0a,
+																		$09,$09,$09,'[voltage] 2.47v',$0d,$0a,
+																		$09,$09,$09,'[current] 2.42a',$0d,$0a,
+																		$09,$09,$09,'[temp] 40.3c',$0d,$0a,
+																$09,$09,'[cpu board pol 1] good',$0d,$0a,
+																		$09,$09,$09,'[status flags] 0x00',$0d,$0a,
+																		$09,$09,$09,'[voltage] 3.24v',$0d,$0a,
+																		$09,$09,$09,'[current] 3.92a',$0d,$0a,
+																		$09,$09,$09,'[temp] 69.5c',$0d,$0a,
+																$09,$09,'[cpu board pol 2] good',$0d,$0a,
+																		$09,$09,$09,'[status flags] 0x00',$0d,$0a,
+																		$09,$09,$09,'[voltage] 3.26v',$0d,$0a,
+																		$09,$09,$09,'[current] 1.05a',$0d,$0a,
+																		$09,$09,$09,'[temp] 43.0c',$0d,$0a"
+					ParseDGXData();
+				}            
+				CASE 27:// SEND_STRING dvDgxSerial, "'~scri7v3!'";
+				{
+					cBufferDGX = "'~scrv2i7!',$0d,$0a,
+												'[7:System Sensors] detected',$0d,$0a,
+														$09,'[io board 1 sensors] detected',$0d,$0a,
+																$09,$09,'[temp 1] 37.0c',$0d,$0a,
+														$09,'[io board 2 sensors] detected',$0d,$0a,
+																$09,$09,'[temp 1] 36.0c',$0d,$0a,
+														$09,'[io board 3 sensors] detected',$0d,$0a,
+																$09,$09,'[temp 1] 36.5c',$0d,$0a,
+														$09,'[io board 4 sensors] detected',$0d,$0a,
+																$09,$09,'[temp 1] 34.0c',$0d,$0a,
+														$09,'[expansion board 1 sensors] detected',$0d,$0a,
+																$09,$09,'[temp 1] 34.0c',$0d,$0a,
+														$09,'[expansion board 2 sensors] detected',$0d,$0a,
+																$09,$09,'[temp 1] 34.0c',$0d,$0a,
+														$09,'[center board 1 sensors] detected',$0d,$0a,
+																$09,'[temp 1] 32.0c',$0d,$0a,
+														$09,'[signal sense]',$0d,$0a,
+																$09,$09,'[board 1] 0',$0d,$0a,
+														$09,'[fan controller 1] detected',$0d,$0a,
+																$09,$09,'[fan 1 setting] 1440 rpm',$0d,$0a,
+																$09,$09,'[fan 1 speed] 1440 rpm',$0d,$0a,
+																$09,$09,'[fan 2 setting] 1440 rpm',$0d,$0a,
+																$09,$09,'[fan 2 speed] 1440 rpm',$0d,$0a";
+					ParseDGXData();
+				}
+				CASE 28: // emulate BCPU command
+				{
+					cBufferDGX = "'DGX_SHELL>show stats',$0d,$0a,
+												'MCPU:',$0d,$0a,
+																$09,$09,$09,$09,'i2c failure count: 0',$0d,$0a,
+																$09,$09,$09,$09,'reboot count: 28',$0d,$0a,
+																$09,$09,$09,$09,'recover count: 0',$0d,$0a,
+												$0d,$0a,
+												'BCPU2:',$0d,$0a,
+																$09,$09,$09,$09,'Ch1-[DxLink In] BER Video:10^(-10), Audio:10^(-10), Blank:10^(-10), Ctrl:10^(-10)',$0d,$0a,
+																$09,$09,$09,$09,'Ch1-[TX] Cable Length: 0 (Meters), 0 (Feet)',$0d,$0a,
+																$09,$09,$09,$09,'Ch1-[DxLink In] MSE Chan A:-22db, Chan B:-20db, Chan C:-23db, Chan D:-22db',$0d,$0a,
+																$09,$09,$09,$09,'Ch1-[DxLink In] DSP Reset Count: 1',$0d,$0a,
+																$09,$09,$09,$09,'Ch2-Unlinked.',$0d,$0a,
+																$09,$09,$09,$09,'Ch2-Unlinked.',$0d,$0a, 
+																$09,$09,$09,$09,'Ch2-Unlinked.',$0d,$0a,
+																$09,$09,$09,$09,'Ch2-Unlinked.',$0d,$0a, 
+																$09,$09,$09,$09,'Ch3-Unlinked.',$0d,$0a,
+																$09,$09,$09,$09,'Ch3-Unlinked.',$0d,$0a, 
+																$09,$09,$09,$09,'Ch3-Unlinked.',$0d,$0a,
+																$09,$09,$09,$09,'Ch3-Unlinked.',$0d,$0a, 
+																$09,$09,$09,$09,'Ch4-Unlinked.',$0d,$0a,
+																$09,$09,$09,$09,'Ch4-Unlinked.',$0d,$0a, 
+																$09,$09,$09,$09,'Ch4-Unlinked.',$0d,$0a,
+																$09,$09,$09,$09,'Ch4-Unlinked.',$0d,$0a, 
+												$0d,$0a,
+												'BCPU4:',$0d,$0a,
+																$09,$09,$09,$09,'Ch1-Unlinked.',$0d,$0a,
+																$09,$09,$09,$09,'Ch1-Unlinked.',$0d,$0a, 
+																$09,$09,$09,$09,'Ch1-Unlinked.',$0d,$0a,
+																$09,$09,$09,$09,'Ch1-Unlinked.',$0d,$0a, 
+																$09,$09,$09,$09,'Ch2-Unlinked.',$0d,$0a,
+																$09,$09,$09,$09,'Ch2-Unlinked.',$0d,$0a, 
+																$09,$09,$09,$09,'Ch2-Unlinked.',$0d,$0a,
+																$09,$09,$09,$09,'Ch2-Unlinked.',$0d,$0a, 
+																$09,$09,$09,$09,'Ch3-Unlinked.',$0d,$0a,
+																$09,$09,$09,$09,'Ch3-Unlinked.',$0d,$0a, 
+																$09,$09,$09,$09,'Ch3-Unlinked.',$0d,$0a,
+																$09,$09,$09,$09,'Ch3-Unlinked.',$0d,$0a, 
+																$09,$09,$09,$09,'Ch4-[RX] BER  Video:10^(-10), Audio:10^(-10), Blank:10^(-10), Ctrl:10^(-10)',$0d,$0a,
+																$09,$09,$09,$09,'Ch4-[DxLink Out] Cable Length: 0 (Meters), 0 (Feet)',$0d,$0a,
+																$09,$09,$09,$09,'Ch4-[RX] MSE Chan A:-22db, Chan B:-23db, Chan C:-23db, Chan D:-23db',$0d,$0a,
+																$09,$09,$09,$09,'Ch4-[RX] DSP Reset Count: 0',$0d,$0a,
+												$0d,$0a,
+												'CENTER:',$0d,$0a,
+																$09,$09,$09,$09,'Center Board Reboot counts',$0d,$0a,
+																$09,$09,$09,$09,'Reboots:  00000020',$0d,$0a,
+																	 $09,$09,$09,$09,$09,'Power ON : 00000012',$0d,$0a,
+																	 $09,$09,$09,$09,$09,'hard mclr: 00000005',$0d,$0a,
+																	 $09,$09,$09,$09,$09,'software : 00000009',$0d,$0a,
+																$09,$09,$09,$09,'I2c Reboots received:  00000006',$0d,$0a,
+												$0d,$0a,
+												'PPIC:',$0d,$0a,
+												$0d,$0a,
+																$09,$09,$09,$09,'Current bus state:   SCL+  SDA+',$0d,$0a,
+																$09,$09,$09,$09,'Local I2c statistics (error counts)',$0d,$0a,
+																		$09,$09,$09,$09,$09,$09,'READ ...',$0d,$0a,
+																				$09,$09,$09,$09,$09,$09,'00-    842886',$0d,$0a,
+																				$09,$09,$09,$09,$09,$09,$09,$09,'01-         0',$0d,$0a,
+																				$09,$09,$09,$09,$09,$09,$09,$09,'02-         0',$0d,$0a,
+																				$09,$09,$09,$09,$09,$09,$09,$09,'03-         2',$0d,$0a,
+																				$09,$09,$09,$09,$09,$09,$09,$09,'04-         0',$0d,$0a,
+																				$09,$09,$09,$09,$09,$09,$09,$09,'05-         0',$0d,$0a,
+																				$09,$09,$09,$09,$09,$09,$09,$09,'06-         0',$0d,$0a,
+																				$09,$09,$09,$09,$09,$09,$09,$09,'07-         0',$0d,$0a,
+																				$09,$09,$09,$09,$09,$09,$09,$09,'08-         0',$0d,$0a,
+												$0d,$0a,
+																		$09,$09,$09,$09,$09,$09,'WRITE ...',$0d,$0a,
+																				$09,$09,$09,$09,$09,$09,$09,$09,'10-     39638',$0d,$0a,
+																				$09,$09,$09,$09,$09,$09,$09,$09,'11-         0',$0d,$0a,
+																				$09,$09,$09,$09,$09,$09,$09,$09,'12-         0',$0d,$0a,
+																				$09,$09,$09,$09,$09,$09,$09,$09,'13-         0',$0d,$0a,
+																				$09,$09,$09,$09,$09,$09,$09,$09,'14-         0',$0d,$0a,
+												$0d,$0a,
+																				$09,$09,$09,$09,$09,$09,$09,$09,'15-         0',$0d,$0a,
+												$0d,$0a,
+												'DGX_SHELL>',$0d,$0a"
+					ParseDGXData();
+				} 
 			}
 	}
 }
@@ -2474,162 +2723,6 @@ DATA_EVENT[DgxDeviceSet]
 
 		// Determine what device created the data event and get it's port number
 		eventDevicePort = DgxDeviceSet[GET_LAST(DgxDeviceSet)].PORT;
-
-/*
-		SELECT
-		{
-
-			// Audio and video input name
-			// Note: With current versions of the firmware changes in the video name
-			// are reflected in the audio name as well
-			ACTIVE(header == 'VIDIN_NAME' || header == 'AUDIN_NAME'):
-			{
-				STACK_VAR CHAR cachedName[MAX_STRING_SIZE];
-				STACK_VAR CHAR newName[MAX_STRING_SIZE];
-
-				newName	= RmsParseCmdParam(DATA.TEXT);
-				IF(header == 'VIDIN_NAME')
-				{
-					cachedName = DgxDeviceInfo.videoInputName[eventDevicePort];
-				}
-				ELSE
-				{
-					cachedName = DgxDeviceInfo.audioInputName[eventDevicePort];
-				}
-
-				// if there is a change, update device information structure
-				IF(cachedName != newName)
-				{
-					IF(header == 'VIDIN_NAME')
-					{
-						DgxDeviceInfo.videoInputName[eventDevicePort] = newName;
-						SyncVideoOutputSource();
-					}
-					ELSE
-					{
-						DgxDeviceInfo.audioInputName[eventDevicePort] = newName;
-						SyncAudioOutputSource();
-					}				
-				}
-			}
-
-			// Video output scale
-			ACTIVE(header == 'VIDOUT_SCALE'):
-			{
-				STACK_VAR CHAR newScale[MAX_STRING_SIZE];
-
-				newScale	= RmsParseCmdParam(DATA.TEXT);
-
-				// if there is a change update struct and RMS
-				IF(UPPER_STRING(DgxDeviceInfo.videoOutputScaleMode[eventDevicePort]) != UPPER_STRING(newScale))
-				{
-					DgxDeviceInfo.videoOutputScaleMode[eventDevicePort] = newScale;
-					DgxAssetParameterSetValue(assetClientKey,  "'switcher.output.video.scale.mode.', ITOA(eventDevicePort)", newScale);
-				}
-			}
-
-			// Video input format
-			ACTIVE(header == 'VIDIN_FORMAT'):
-			{
-				STACK_VAR CHAR newFormat[MAX_STRING_SIZE];
-
-				newFormat	= RmsParseCmdParam(DATA.TEXT);
-
-				// if there is a change update struct and RMS
-				IF(UPPER_STRING(DgxDeviceInfo.videoInputFormat[eventDevicePort]) != UPPER_STRING(newFormat))
-				{
-					DgxDeviceInfo.videoInputFormat[eventDevicePort] = newFormat;
-					DgxAssetParameterSetValue(assetClientKey,  "'switcher.input.video.format.', ITOA(eventDevicePort)", newFormat);
-				}
-			}
-*/
-/*
-			// Events for queries for connections between inputs and outputs go here
-			// This applies to both audio and video
-			ACTIVE(LEFT_STRING(header,8) == 'SWITCH'):
-			{
-				STACK_VAR CHAR input[2];
-				STACK_VAR CHAR mediaRouteInfo[RMS_MAX_PARAM_LEN];
-				STACK_VAR CHAR media[5];
-				STACK_VAR CHAR output[2];
-				STACK_VAR CHAR videoSourceChanged;
-				STACK_VAR INTEGER cachedValue;
-				STACK_VAR INTEGER inputNumber;
-				STACK_VAR INTEGER ndx;
-				STACK_VAR INTEGER outputNumber;
-
-				videoSourceChanged = FALSE;
-				param1	= RmsParseCmdParam(DATA.TEXT);
-				mediaRouteInfo = param1;
-				REMOVE_STRING(mediaRouteInfo, 'L', 1);
-				media = LEFT_STRING(mediaRouteInfo, 5);				// A(AUDIO) or V(VIDEO)
-				REMOVE_STRING(mediaRouteInfo, media, 1);
-				
-				// Characters between the 'I' and 'O' represent the input port number
-				REMOVE_STRING(mediaRouteInfo, 'I', 1);
-				input = MID_STRING(mediaRouteInfo, 1, FIND_STRING(mediaRouteInfo, 'O', 1) - 1);
-				
-				// Any characters after the 'O' represent the output port number
-				REMOVE_STRING(mediaRouteInfo, "input,'O'", 1);
-				output = mediaRouteInfo;
-				
-				inputNumber = ATOI(input);
-				outputNumber = ATOI(output);
-
-				// Parse video connection routing information
-				IF(media == 'VIDEO')
-				{
-					// If input number is 0, disconnect outputs
-					IF(inputNumber == 0 && outputNumber != 0 )
-					{
-						cachedValue = DgxDeviceInfo.videoOutputSelectedSource[outputNumber];
-						IF(cachedValue != 0)
-						{
-							videoSourceChanged = TRUE;
-							DgxDeviceInfo.videoOutputSelectedSource[outputNumber] = 0;
-						}
-					}
-					// If output number is 0, disconnect inputs
-					ELSE IF(outputNumber == 0 && inputNumber != 0 )
-					{
-						FOR(ndx = 1; ndx <= DgxDeviceInfo.videoOutputCount; ndx++)
-						{
-							cachedValue = DgxDeviceInfo.videoOutputSelectedSource[ndx];
-							IF(cachedValue == inputNumber)
-							{
-								videoSourceChanged = TRUE;
-								DgxDeviceInfo.videoOutputSelectedSource[ndx] = 0;
-							}
-						}
-					}
-					ELSE IF(outputNumber != 0 && inputNumber != 0 )
-					{
-						cachedValue = DgxDeviceInfo.videoOutputSelectedSource[outputNumber];
-						IF(cachedValue != inputNumber)
-						{
-							videoSourceChanged = TRUE;
-							DgxDeviceInfo.videoOutputSelectedSource[outputNumber] = inputNumber;
-						}
-					}
-					ELSE
-					{
-						AMX_LOG(AMX_WARNING, "MONITOR_DEBUG_NAME, '-DATA_EVENT.COMMAND: header: SWITCH , media: ',
-											media, ' , unexpected output and input ports are zero'");
-					}
-				}
-				ELSE
-				{
-					AMX_LOG(AMX_WARNING, "MONITOR_DEBUG_NAME, '-DATA_EVENT.COMMAND: header: SWITCH ,
-										unexpected media type: ', media");
-				}
-
-				IF(videoSourceChanged == TRUE)
-				{
-					SyncVideoOutputSource();
-				}
-			}
-		}
-*/
 	}
 }
 

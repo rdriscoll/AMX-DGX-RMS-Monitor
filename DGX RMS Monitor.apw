@@ -155,28 +155,5 @@
 <Comments></Comments>
 </File>
 </System>
-<System IsActive="false" Platform="Netlinx" Transport="TCPIP"><Identifier>Testing</Identifier>
-<SysID>0</SysID>
-<TransSerial>COM5,38400,8,None,1,None</TransSerial>
-<TransModem>COM1,38400,8,None,1,None</TransModem>
-<TransTCPIP>192.168.2.101:1319:1:AMX NSW NI-700 Static::</TransTCPIP>
-<VirtualNetLinxMasterFlag>0</VirtualNetLinxMasterFlag>
-<VNMRestoreIPSettings>192.168.24.101:1319:1: DGX::</VNMRestoreIPSettings>
-<VNMSystemID>1</VNMSystemID>
-<VNMIPAddress>192.168.24.100</VNMIPAddress>
-<VNMMaskAddress>255.255.255.0</VNMMaskAddress>
-<IsAuthenticationEnabled>0</IsAuthenticationEnabled>
-<UserName></UserName>
-<Password></Password>
-<Comments></Comments>
-<File CompileType="None" Type="Include"><Identifier>Testing</Identifier>
-<FilePathName>Testing.axi</FilePathName>
-<Comments></Comments>
-</File>
-<File CompileType="Netlinx" Type="MasterSrc"><Identifier>Testing</Identifier>
-<FilePathName>Testing.axs</FilePathName>
-<Comments></Comments>
-</File>
-</System>
 </Project>
 </Workspace>

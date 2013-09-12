@@ -29,7 +29,7 @@ dvDXLinkRx_02 = 6102:1:LOCAL_SYSTEM
 //dvDgxSerial	= 10004:1:LOCAL_SYSTEM
 dvDgxSerial		= 5001:1:REMOTE_SYSTEM_01
 
-vdvDGX				= 32001:1:LOCAL_SYSTEM
+vdvDGX				= 33001:1:LOCAL_SYSTEM
 vdvRMS 				= 41002:1:LOCAL_SYSTEM //virtual device for RMS Main
 
 (***********************************************************)
@@ -85,6 +85,7 @@ BUTTON_EVENT[dvUI, 0] // debugging only
 {
 	PUSH:
 	{
+		SEND_STRING dvTerminal, "'Button pushed:', ITOA(BUTTON.INPUT.CHANNEL)"
 		IF(BUTTON.INPUT.CHANNEL < 8)
 			SEND_STRING dvDgxSerial, "'~scri',ITOA(BUTTON.INPUT.CHANNEL),'v3!',$0d,$0a"; // board info
 		ELSE
