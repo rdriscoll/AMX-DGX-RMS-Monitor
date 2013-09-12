@@ -58,6 +58,10 @@ MODULE_NAME='RmsDgxSwitcherMonitor'(DEV vdvRMS, DEV vdvDEV, DEV dvDgxSerial)
 // 20130906 v0.1 RRD - modified 'RmsDvxSwitcherMonitor'
 // Only made max 16x16
 
+// Tested on DGX8x8
+// 		Master   fw 4.2.379
+//		Switcher fw 1.6.1.1
+
 //#DEFINE _VIDEO_SWITCHER_MONITORING_
 
 (***********************************************************)
@@ -96,8 +100,6 @@ INTEGER MAX_VIDEO_OUTPUT_CNT													= 8;
 INTEGER MAX_FAN_COUNT																	= 2;
 INTEGER MAX_PWR_SUPLY_COUNT														= 2;
 
-INTEGER NUM_INPUT_BOARDS = 2; // DGX 8
-INTEGER NUM_OUTPUT_BOARDS = 2; // DGX 8
 INTEGER NUM_CENTER_BOARDS = 2; // DGX 8
 INTEGER NUM_EXPANSION_BOARDS = 2; // DGX 8
 
@@ -204,10 +206,10 @@ STRUCTURE RmsDgxInfo
 	INTEGER PowerAvailable;
 	INTEGER PowerRequired;
 	
-	_DXL_BOARD uInputBoard[4];
-	_DXL_BOARD uOutputBoard[4];
-	_DXL_BOARD uExpansionBoard[2];
-	_DXL_BOARD uCenterBoard[2];
+	_DXL_BOARD uInputBoard[MAX_VIDEO_INPUT_CNT/4];
+	_DXL_BOARD uOutputBoard[MAX_VIDEO_OUTPUT_CNT/4];
+	_DXL_BOARD uExpansionBoard[NUM_EXPANSION_BOARDS];
+	_DXL_BOARD uCenterBoard[NUM_CENTER_BOARDS];
 	CHAR cNumInputBoards;
 	CHAR cNumOutputBoards;
 	CHAR cNumCenterBoards;
@@ -706,7 +708,6 @@ DEFINE_FUNCTION RequestDgxValuesUpdates()
 		}     
 		cDgxValueUpdateIndex++
 	}
-
 }
 
 (***********************************************************)
@@ -770,11 +771,7 @@ DEFINE_FUNCTION RegisterAssetMetadata()
 	{
 		RETURN;
 	}
-		//DgxAssetParameterSetValueBoolean(assetClientKey, "'asset.power-supply-',ITOA(cCount)", 0);
-
-	//RmsAssetMetadataEnqueueBoolean(assetClientKey, 'asset.power.supply.1', 'Power supply 1', DgxDeviceInfo.PowerSupply[1]);
-	//RmsAssetMetadataEnqueueBoolean(assetClientKey, 'asset.power.supply.2', 'Power supply 2', DgxDeviceInfo.PowerSupply[2]);
-
+	
 #IF_DEFINED _VIDEO_SWITCHER_MONITORING_
 	RmsAssetMetadataEnqueueNumber(assetClientKey, 'switcher.input.video.count', 'Video Input Count', DgxDeviceInfo.videoInputCount);
 	RmsAssetMetadataEnqueueNumber(assetClientKey, 'switcher.output.video.count', 'Video Output Count', DgxDeviceInfo.videoOutputCount);
@@ -795,7 +792,7 @@ DEFINE_FUNCTION RegisterAssetMetadata()
 #END_IF
 	// submit metadata for registration now
 	RmsAssetMetadataSubmit(assetClientKey);
-
+//#WARN 'commented out line 796 RmsAssetMetadataSubmit(assetClientKey);'
 }
 
 (***********************************************************)
@@ -1446,7 +1443,7 @@ DEFINE_FUNCTION SynchronizeAssetParameters()
 		FOR(ndx2 = 1; ndx2 <= MAX_LENGTH_ARRAY(DgxDeviceInfo.uInputBoard[1].uChannel); ndx2++)
 		{
 			paramKey = "'switcher.input.video.board.', ITOA(ndx1), '.input.', ITOA(ndx2)";
-			RmsAssetParameterEnqueueSetValue(assetClientKey, paramKey, DgxDeviceInfo.uInputBoard[ndx1].uChannel[ndx2].cLink);
+			RmsAssetParameterEnqueueSetValueBoolean(assetClientKey, paramKey, DgxDeviceInfo.uInputBoard[ndx1].uChannel[ndx2].cLink);
 		}
   }
 	
@@ -1467,7 +1464,7 @@ DEFINE_FUNCTION SynchronizeAssetParameters()
 		FOR(ndx2 = 1; ndx2 <= MAX_LENGTH_ARRAY(DgxDeviceInfo.uOutputBoard[1].uChannel); ndx2++)
 		{
 			paramKey = "'switcher.output.video.board.', ITOA(ndx1), '.output.', ITOA(ndx2)";
-			RmsAssetParameterEnqueueSetValue(assetClientKey, paramKey, DgxDeviceInfo.uOutputBoard[ndx1].uChannel[ndx2].cLink);
+			RmsAssetParameterEnqueueSetValueBoolean(assetClientKey, paramKey, DgxDeviceInfo.uOutputBoard[ndx1].uChannel[ndx2].cLink);
 		}
   }
   // submit all the pending parameter updates now
@@ -1624,7 +1621,7 @@ DEFINE_FUNCTION ParseDGXSplashScreen4(CHAR sTemp[]) // ~scrv3i4! [4:Hardware Boa
 		IF(DgxDeviceInfo.uInputBoard[cCount_].nStatus <> nVal_)
 		{
 			DgxDeviceInfo.uInputBoard[cCount_].nStatus = nVal_;
-			DgxAssetParameterSetValueNumber(assetClientKey, "'switcher.input.video.board.', ITOA(DgxDeviceInfo.uInputBoard[cCount_].nStatus)", DgxDeviceInfo.uInputBoard[cCount_].nStatus);
+			DgxAssetParameterSetValueNumber(assetClientKey, "'switcher.input.video.board.', ITOA(cCount_)", DgxDeviceInfo.uInputBoard[cCount_].nStatus);
 		}
 		sTemp2_ = GetSubString(sTemp_, '[board ', "$0d", REMOVE_DATA_UP_TO_AND_INC_SEARCH);
 	}
@@ -1653,7 +1650,7 @@ DEFINE_FUNCTION ParseDGXSplashScreen4(CHAR sTemp[]) // ~scrv3i4! [4:Hardware Boa
 		IF(DgxDeviceInfo.uOutputBoard[cCount_].nStatus <> nVal_)
 		{
 			DgxDeviceInfo.uOutputBoard[cCount_].nStatus = nVal_;
-			DgxAssetParameterSetValueNumber(assetClientKey, "'switcher.output.video.board.', ITOA(DgxDeviceInfo.uOutputBoard[cCount_].nStatus)", DgxDeviceInfo.uOutputBoard[cCount_].nStatus);
+			DgxAssetParameterSetValueNumber(assetClientKey, "'switcher.output.video.board.', ITOA(cCount_)", DgxDeviceInfo.uOutputBoard[cCount_].nStatus);
 		}
 		sTemp2_ = GetSubString(sTemp_, '[board ', "$0d", REMOVE_DATA_UP_TO_AND_INC_SEARCH);
 	}
@@ -1730,7 +1727,7 @@ DEFINE_FUNCTION ParseDGXSplashScreen6(CHAR sTemp[]) // ~scrv3i6! [6:Power System
 // can't just pick a sub string out because there is no guarantee of the next 
 	sTemp_ = '[ac power slot 1] good'
 	nVal_ = (FIND_STRING(sTemp, sTemp_,1) != 0);
-	//DebugVal("'PowerSupply[1] in'", nVal_, DEBUG_LEVEL_CHATTY);
+	DebugVal("'PowerSupply 1'", nVal_, DEBUG_LEVEL_CHATTY);
 	//DebugVal("'PowerSupply[1] cur'", DgxDeviceInfo.PowerSupply[1], DEBUG_LEVEL_CHATTY);
 	IF(DgxDeviceInfo.PowerSupply[1] != nVal_)
 	{
@@ -1742,7 +1739,7 @@ DEFINE_FUNCTION ParseDGXSplashScreen6(CHAR sTemp[]) // ~scrv3i6! [6:Power System
 
 	sTemp_ = '[ac power slot 2] good'
 	nVal_ = (FIND_STRING(sTemp, sTemp_,1) != 0);
-	//DebugVal("'PowerSupply[2] in'", nVal_, DEBUG_LEVEL_STANDARD);
+	DebugVal("'PowerSupply 2'", nVal_, DEBUG_LEVEL_CHATTY);
 	//DebugVal("'PowerSupply[2] cur'", DgxDeviceInfo.PowerSupply[2], DEBUG_LEVEL_STANDARD);
 	IF(DgxDeviceInfo.PowerSupply[2] != nVal_)
 	{
@@ -1901,21 +1898,10 @@ BCPU1:
 		sTemp_ = GetSubString(sTemp, "'Ch',ITOA(cCount_),'-Unlinked.'", "$0d", REMOVE_DATA_INC_SEARCH); //Ch1-[DxLink In] BER Video:10^(-10), Audio:10^(-10), Blank:10^(-10), Ctrl:10^(-10)
 		//DebugString("'sTemp_'", sTemp_, DEBUG_LEVEL_CHATTY);
 		cLinked_ = (LENGTH_STRING(sTemp_) != 0); // *** should be a ! ***
-		IF(cLinked_) // linked
-		{
-			//DebugVal("'linked'", TYPE_CAST(cLinked_), DEBUG_LEVEL_CHATTY);
-			sTemp_ = GetSubString(sTemp, "'Ch',ITOA(cCount_),'-[DxLink In]'", "$0d", DONT_REMOVE_DATA); //Ch1-[DxLink In] BER Video:10^(-10), Audio:10^(-10), Blank:10^(-10), Ctrl:10^(-10)
-			cIsInputBoard_ = (LENGTH_STRING(sTemp_)); // [DxLink In]
-		}
-		ELSE // unlinked - have to determine input board by the number
-		{
-			cIsInputBoard_ = (cBoard <= MAX_VIDEO_INPUT_CNT/4);
-			//DebugVal("'Unlinked'", TYPE_CAST(cLinked_), DEBUG_LEVEL_CHATTY);
-			//DebugString("'sTemp_'", sTemp_, DEBUG_LEVEL_SUPER_CHATTY);
-		}
+		cIsInputBoard_ = (cBoard <= MAX_VIDEO_INPUT_CNT/4);
 		IF(cIsInputBoard_)
 		{
-			sTemp_ = GetSubString(sTemp, "'Ch',ITOA(cCount_),'-[DxLink In]'", "$0d", REMOVE_DATA_INC_SEARCH); //Ch1-[DxLink In] BER Video:10^(-10), Audio:10^(-10), Blank:10^(-10), Ctrl:10^(-10)
+			sTemp_ = GetSubString(sTemp, "'Ch',ITOA(cCount_),'-[DxLink In] BER'", "$0d", REMOVE_DATA_INC_SEARCH); //Ch1-[DxLink In] BER Video:10^(-10), Audio:10^(-10), Blank:10^(-10), Ctrl:10^(-10)
 			//DebugVal("'cBoard Input'", TYPE_CAST(cBoard), DEBUG_LEVEL_STANDARD);
 			sTemp2_ = "'Input board ', ITOA(cBoard), ' channel ', ITOA(cCount_)";
 			DebugVal(sTemp2_, cLinked_, DEBUG_LEVEL_CHATTY);
@@ -1923,9 +1909,10 @@ BCPU1:
 			{
 				DgxDeviceInfo.uInputBoard[cBoard].uChannel[cCount_].cLink = cLinked_;
 				//DebugVal("sTemp2_", TYPE_CAST(cLinked_), DEBUG_LEVEL_STANDARD);
-				DgxAssetParameterSetValueNumber(assetClientKey, 
+				DgxAssetParameterSetValueBoolean(assetClientKey, 
 																				"'switcher.input.video.board.', ITOA(cBoard), '.input.', ITOA(cCount_)",
-																				DgxDeviceInfo.uInputBoard[cBoard].uChannel[cCount_].cLink);
+																				cLinked_);
+																				//DgxDeviceInfo.uInputBoard[cBoard].uChannel[cCount_].cLink);
 			}
 		}
 		ELSE
@@ -1944,9 +1931,10 @@ BCPU1:
 				{
 					DgxDeviceInfo.uOutputBoard[cOutputBoardNum_].uChannel[cCount_].cLink = cLinked_;
 					//DebugVal("sTemp2_,'-update'", TYPE_CAST(cLinked_), DEBUG_LEVEL_STANDARD);
-					DgxAssetParameterSetValueNumber(assetClientKey, 
+					DgxAssetParameterSetValueBoolean(assetClientKey, 
 																					"'switcher.output.video.board.', ITOA(cOutputBoardNum_), '.output.', ITOA(cCount_)",
-																					DgxDeviceInfo.uOutputBoard[cOutputBoardNum_].uChannel[cCount_].cLink);
+																					cLinked_);
+																					//DgxDeviceInfo.uOutputBoard[cOutputBoardNum_].uChannel[cCount_].cLink);
 					[vdvDEV, 100+(cOutputBoardNum_-1)*4+cCount_] = DgxDeviceInfo.uOutputBoard[cOutputBoardNum_].uChannel[cCount_].cLink; // feedback. Channels 101 - 64 are input board link status
 				}
 			}
@@ -1955,10 +1943,18 @@ BCPU1:
 		//NotifyDGXUnlinked(cNumber, cCount_);
 		sTemp_ = GetSubString(sTemp, "'Ch',ITOA(cCount_),'-[TX]'", "$0d", REMOVE_DATA_INC_SEARCH);
     // Ch1-[TX] Cable Length: 0 (Meters), 0 (Feet)
+ 		sTemp_ = GetSubString(sTemp, "'Ch',ITOA(cCount_),'-[DxLink Out]'", "$0d", REMOVE_DATA_INC_SEARCH);
+    // Ch1-[DxLink Out] Cable Length: 0 (Meters), 0 (Feet)'
+		
 		sTemp_ = GetSubString(sTemp, "'Ch',ITOA(cCount_),'-[DxLink In] MSE'", "$0d", REMOVE_DATA_INC_SEARCH);
      //Ch1-[DxLink In] MSE Chan A:-21db, Chan B:-22db, Chan C:-22db, Chan D:-22db
+		sTemp_ = GetSubString(sTemp, "'Ch',ITOA(cCount_),'-[RX] MSE'", "$0d", REMOVE_DATA_INC_SEARCH);
+     //Ch1-[RX] MSE Chan A:-22db, Chan B:-23db, Chan C:-23db, Chan D:-23db
+		 
 		sTemp_ = GetSubString(sTemp, "'Ch',ITOA(cCount_),'-[DxLink In] DSP'", "$0d", REMOVE_DATA_INC_SEARCH);
-    // Ch1-[DxLink In] DSP Reset Count: 2
+   // Ch1-[DxLink In] DSP Reset Count: 2
+		sTemp_ = GetSubString(sTemp, "'Ch',ITOA(cCount_),'-[RX] DSP'", "$0d", REMOVE_DATA_INC_SEARCH);
+   // Ch1-[RX] DSP Reset Count: 2
 	}
 }
 

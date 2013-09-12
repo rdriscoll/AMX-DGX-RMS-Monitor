@@ -39,12 +39,12 @@ DEFINE_START
 
 rmsInit();
 
-#WARN 'RMS Commented out'
+//#WARN 'RMS Commented out'
 // RMS general
-//DEFINE_MODULE 'RmsNetLinxAdapter_dr4_0_0' modRMS1(vdvRMS) // instantiate the Netlinx adaptor module which will start the RMS client
+DEFINE_MODULE 'RmsNetLinxAdapter_dr4_0_0' modRMS1(vdvRMS) // instantiate the Netlinx adaptor module which will start the RMS client
 // params
-//DEFINE_MODULE 'RmsControlSystemMonitor' modRMSsysMon1(vdvRMS, dvSystem) // add the control system as an assett
-//DEFINE_MODULE 'RmsSystemPowerMonitor' modRMSPwrMon1(vdvRMS, dvSystem) 	// monitor power of the system
+DEFINE_MODULE 'RmsControlSystemMonitor' modRMSsysMon1(vdvRMS, dvSystem) // add the control system as an assett
+DEFINE_MODULE 'RmsSystemPowerMonitor' modRMSPwrMon1(vdvRMS, dvSystem) 	// monitor power of the system
 
 DEFINE_MODULE 'RmsDgxSwitcherMonitor' modRMSDgxMon1(vdvRMS, vdvDGX, dvDgxSerial) 	// monitor DGX power, temp, fan and cards
 (***********************************************************)
