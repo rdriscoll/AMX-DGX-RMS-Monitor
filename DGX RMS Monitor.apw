@@ -130,6 +130,10 @@
 <UserName></UserName>
 <Password></Password>
 <Comments></Comments>
+<File CompileType="None" Type="Other"><Identifier>AMX-RMS-DGX-Demo-RMS asset screen</Identifier>
+<FilePathName>AMX-RMS-DGX-Demo-RMS asset screen.PNG</FilePathName>
+<Comments></Comments>
+</File>
 <File CompileType="None" Type="Include"><Identifier>ConfigureDXLink</Identifier>
 <FilePathName>ConfigureDXLink.axi</FilePathName>
 <Comments></Comments>
@@ -138,8 +142,12 @@
 <FilePathName>DGX RMS Monitor.axs</FilePathName>
 <Comments></Comments>
 </File>
-<File CompileType="None" Type="TKO"><Identifier>RmsControlSystemMonitor</Identifier>
-<FilePathName>RmsControlSystemMonitor.tko</FilePathName>
+<File CompileType="None" Type="Other"><Identifier>LICENSE</Identifier>
+<FilePathName>LICENSE.txt</FilePathName>
+<Comments></Comments>
+</File>
+<File CompileType="None" Type="Other"><Identifier>README</Identifier>
+<FilePathName>README.txt</FilePathName>
 <Comments></Comments>
 </File>
 <File CompileType="Netlinx" Type="Module"><Identifier>RmsDgxSwitcherMonitor</Identifier>
@@ -150,8 +158,12 @@
 <FilePathName>RMSMain.axi</FilePathName>
 <Comments></Comments>
 </File>
+<File CompileType="None" Type="TKO"><Identifier>RmsControlSystemMonitor</Identifier>
+<FilePathName>..\..\..\..\..\Program Files (x86)\Common Files\AMXShare\TKOs\RmsControlSystemMonitor.tko</FilePathName>
+<Comments></Comments>
+</File>
 <File CompileType="None" Type="TKO"><Identifier>RmsSystemPowerMonitor</Identifier>
-<FilePathName>RmsSystemPowerMonitor.tko</FilePathName>
+<FilePathName>..\..\..\..\..\Program Files (x86)\Common Files\AMXShare\TKOs\RmsSystemPowerMonitor.tko</FilePathName>
 <Comments></Comments>
 </File>
 </System>

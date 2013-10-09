@@ -1,45 +1,42 @@
-//*********************************************************************
-//
-//             AMX Resource Management Suite  (4.1.5)
-//
-//*********************************************************************
-/*
- *  Legal Notice :
- *
- *     Copyright, AMX LLC, 2012
- *
- *     Private, proprietary information, the sole property of AMX LLC.  The
- *     contents, ideas, and concepts expressed herein are not to be disclosed
- *     except within the confines of a confidential relationship and only
- *     then on a need to know basis.
- *
- *     Any entity in possession of this AMX Software shall not, and shall not
- *     permit any other person to, disclose, display, loan, publish, transfer
- *     (whether by sale, assignment, exchange, gift, operation of law or
- *     otherwise), license, sublicense, copy, or otherwise disseminate this
- *     AMX Software.
- *
- *
- *     This AMX Software is owned by AMX and is protected by United States
- *     copyright laws, patent laws, international treaty provisions, and/or
- *     state of Texas trade secret laws.
- *
- *     Portions of this AMX Software may, from time to time, include
- *     pre-release code and such code may not be at the level of performance,
- *     compatibility and functionality of the final code. The pre-release code
- *     may not operate correctly and may be substantially modified prior to
- *     final release or certain features may not be generally released. AMX is
- *     not obligated to make or support any pre-release code. All pre-release
- *     code is provided "as is" with no warranties.
- *
- *     This AMX Software is provided with restricted rights. Use, duplication,
- *     or disclosure by the Government is subject to restrictions as set forth
- *     in subparagraph (1)(ii) of The Rights in Technical Data and Computer
- *     Software clause at DFARS 252.227-7013 or subparagraphs (1) and (2) of
- *     the Commercial Computer Software Restricted Rights at 48 CFR 52.227-19,
- *     as applicable.
-*/
+(***********************************************************
 
+The MIT License (MIT)
+
+Copyright (c) 2013 AMX Australia
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+*)
+//*********************************************************************
+//
+//  20130906 v0.1 RRD - modified 'RmsDvxSwitcherMonitor' from RMS SDK 4.1.5
+// 															Compiled with libraries from RMS SDK 4.1.13
+// Tested on DGX8x8
+//		Master   fw 4.2.379
+//		Switcher fw 1.6.1.1
+//
+//  Only made max 8x8. 
+//		To make larger increase MAX_VIDEO_INPUT_CNT and MAX_VIDEO_OUTPUT_CNT 
+//
+// Disclaimer - feel free to use this but I provide no 
+//		support and take no responsibility for issues that
+//		may arise.
+//
 (***********************************************************)
 (*                                                         *)
 (*  PURPOSE:                                               *)
@@ -55,13 +52,6 @@
 (*                                                         *)
 (***********************************************************)
 MODULE_NAME='RmsDgxSwitcherMonitor'(DEV vdvRMS, DEV vdvDEV, DEV dvDgxSerial)
-// 20130906 v0.1 RRD - modified 'RmsDvxSwitcherMonitor'
-// Only made max 16x16
-
-// Tested on DGX8x8
-// 		Master   fw 4.2.379
-//		Switcher fw 1.6.1.1
-
 //#DEFINE _VIDEO_SWITCHER_MONITORING_
 
 (***********************************************************)
@@ -73,8 +63,6 @@ DEFINE_DEVICE
 (*               CONSTANT DEFINITIONS GO BELOW             *)
 (***********************************************************)
 DEFINE_CONSTANT
-
-INTEGER DEBUG_LEVEL																		= 7;
 
 INTEGER DEBUG_LEVEL_QUIET															= 1
 INTEGER DEBUG_LEVEL_STANDARD													= 2
@@ -114,12 +102,18 @@ CHAR NO_INPUTS_MSG[]																	= 'None';
 CHAR SET_FRONT_PANEL_LOCKOUT_ENUM[3][MAX_STRING_SIZE]	= { 'All', 'Unlocked', 'Configuration Only' };	// Front panel lockout values
 CHAR SET_POWER_ENUM[]																	= { 'ON|OFF' };		// Note the words may change however power on must be first
 CHAR SET_VIDEO_OUTOUT_SCALING_MODE_ENUM[]							= 'AUTO|MANUAL|BYPASS';
+CHAR SET_CONNECTED_ENUM[]															= 'Disconnected|Connected';
 CHAR degreesC[]																				= {176,'C'};	// Degrees Centigrade
 INTEGER FAN_SPEED_DELTA																= 50;					// Don't report speed changes less than this value
 INTEGER TEMPERATURE_ALARM_THRESHOLD										= 40;					// Over temperature threshold in degrees C
 INTEGER TEMPERATURE_DELTA															= 2;					// Don't report temperatrue changes less than this value
 INTEGER TL_MONITOR																		= 1;					// Timeline id
 LONG DgxMonitoringTimeArray[]													= {5000};		// Frequency of value update requests
+
+CHAR STR_CONNECTED[]																	= 'Connected';
+CHAR STR_NOT_CONNECTED[]															= 'Disconnected';
+//CHAR BOOL_STRING[2][MAX_STRING_SIZE]	= { "STR_NOT_CONNECTED", "STR_CONNECTED" };	// Front panel lockout values <- !!!this evaluates wrong!!!
+CHAR BOOL_STRING[2][MAX_STRING_SIZE]	= { 'Disconnected','Connected' };	// Front panel lockout values
 
 // Device Channels
 INTEGER BASE_VIDEO_INPUT_CHANNEL											= 30;				// The video input number is
@@ -170,7 +164,7 @@ STRUCTURE _DXL_CHANNEL
 STRUCTURE _DXL_BOARD
 {
 	_DXL_CHANNEL uChannel[4];
-	INTEGER nStatus; // 0 for missing
+	CHAR sStatus[10];
 }
 
 STRUCTURE RmsDgxInfo
@@ -221,6 +215,7 @@ STRUCTURE RmsDgxInfo
 (***********************************************************)
 DEFINE_VARIABLE
 
+CHAR cDebug;
 VOLATILE CHAR cBusy = 0;
 VOLATILE CHAR cBufferDGX[MAX_BUFFER_SIZE];
 //VOLATILE CHAR strTest[7][MAX_BUFFER_SIZE];
@@ -819,6 +814,9 @@ DEFINE_FUNCTION RegisterAssetParameters()
 	STACK_VAR RmsAssetParameterThreshold fanAlarmThreshold;
 	STACK_VAR RmsAssetParameterThreshold temperatureAlarmThreshold;
 	STACK_VAR RmsAssetParameterThreshold temperatureThreshold;
+	STACK_VAR RmsAssetParameterThreshold ConnectorThreshold;
+	STACK_VAR RmsAssetParameterThreshold BoardThreshold;
+	STACK_VAR RmsAssetParameterThreshold PowerSupplyThreshold;
 
 	// If this device does not have a valid device ID, 
 	// simply return without doing anything
@@ -988,9 +986,9 @@ DEFINE_FUNCTION RegisterAssetParameters()
 	// Video Output Selected Source
 	FOR(ndx1 = 1; ndx1 <= DgxDeviceInfo.videoOutputCount; ndx1++)
 	{
+		paramName		= "'Video Output ', ITOA(ndx1), ' Selected Source'";
 		paramDesc		= "'Video output ', ITOA(ndx1), ' selected source'"
 		paramKey		= "'switcher.output.video.switch.input.', ITOA(ndx1)";
-		paramName		= "'Video Output ', ITOA(ndx1), ' - Selected Source'";
 		inputNumber	= DgxDeviceInfo.videoOutputSelectedSource[ndx1];
 		
 		// Get the input source name or say None if not connected
@@ -1019,12 +1017,20 @@ DEFINE_FUNCTION RegisterAssetParameters()
 #END_IF
 
 	// Power supply
+	PowerSupplyThreshold.comparisonOperator		= RMS_ASSET_PARAM_THRESHOLD_COMPARISON_EQUAL;
+	PowerSupplyThreshold.delayInterval				= 0;
+	PowerSupplyThreshold.enabled							= TRUE;
+	PowerSupplyThreshold.notifyOnRestore			= TRUE;
+	PowerSupplyThreshold.notifyOnTrip					= TRUE;
+	PowerSupplyThreshold.statusType						= RMS_STATUS_TYPE_MAINTENANCE;
+	PowerSupplyThreshold.value								= 'FALSE';
+
 	FOR(ndx1 = 1; ndx1 <= MAX_LENGTH_ARRAY(DgxDeviceInfo.PowerSupply); ndx1++)
 	{
 		paramBooleanValue	= DgxDeviceInfo.PowerSupply[ndx1];
 		paramDesc					= "'Power supply ', ITOA(ndx1)";
 		paramKey					= "'asset.power.supply.', ITOA(ndx1)";
-		paramName					= "'Power supply ', ITOA(ndx1)";
+		paramName					= paramDesc;
 
 		RmsAssetParameterEnqueueBoolean(
 																			assetClientKey,
@@ -1037,6 +1043,9 @@ DEFINE_FUNCTION RegisterAssetParameters()
 																			FALSE,											// Reset value
 																			RMS_TRACK_CHANGES_YES				// RMS Asset Parameter History Tracking
 																		);
+
+		PowerSupplyThreshold.name									= "'Power supply ', ITOA(ndx1), ' failed'";
+		RmsAssetParameterThresholdEnqueueEx(assetClientKey, paramKey, PowerSupplyThreshold)
 	}
 	
 	// number of input boards
@@ -1061,56 +1070,76 @@ DEFINE_FUNCTION RegisterAssetParameters()
 															);
 
 	// Input boards
+	BoardThreshold.comparisonOperator	= RMS_ASSET_PARAM_THRESHOLD_COMPARISON_EQUAL;
+	BoardThreshold.enabled						= TRUE;
+	BoardThreshold.notifyOnRestore		= TRUE;
+	BoardThreshold.notifyOnTrip				= TRUE;
+	BoardThreshold.statusType					= RMS_STATUS_TYPE_MAINTENANCE;
+	BoardThreshold.value							= STR_NOT_CONNECTED;
+
 	FOR(ndx1 = 1; ndx1 <= MAX_LENGTH_ARRAY(DgxDeviceInfo.uInputBoard); ndx1++)
 	{
-		paramDesc					= "'Input board ', ITOA(ndx1)";
-		paramKey					= "'switcher.input.video.board.', ITOA(ndx1)";
 		paramName					= "'Input board ', ITOA(ndx1)";
-		RmsAssetParameterEnqueueNumber(
+		paramDesc					= "paramName, ' details'";
+		paramKey					= "'switcher.input.video.board.', ITOA(ndx1)";
+		RmsAssetParameterEnqueueString(
 																		assetClientKey,
 																		paramKey,										// Parameter key
 																		paramName,									// Parameter name
 																		paramDesc,									// Parameter description
 																		RMS_ASSET_PARAM_TYPE_NONE,	// RMS Asset Parameter (Reporting) Type
-																		DgxDeviceInfo.uInputBoard[ndx1].nStatus,	// Default value
-																		0,													// Minimum value
-																		0,													// Maximum value
+																		sourceName,									// Default value
 																		'',													// Units
 																		RMS_ALLOW_RESET_NO,					// RMS Asset Parameter Reset
-																		0,													// Reset value
+																		'',													// Reset value
 																		RMS_TRACK_CHANGES_YES				// RMS Asset Parameter History Tracking
-																		);
+																	);
+
+		BoardThreshold.name								= "paramName, ' type'";
+		RmsAssetParameterThresholdEnqueueEx(assetClientKey,paramKey, BoardThreshold);
 	}
 
 	// Input boards - inputs
+	
+	ConnectorThreshold.comparisonOperator		= RMS_ASSET_PARAM_THRESHOLD_COMPARISON_EQUAL;
+	ConnectorThreshold.delayInterval				= 0;
+	ConnectorThreshold.enabled							= TRUE;
+	ConnectorThreshold.notifyOnRestore			= TRUE;
+	ConnectorThreshold.notifyOnTrip					= TRUE;
+	ConnectorThreshold.statusType						= RMS_STATUS_TYPE_MAINTENANCE;
+	ConnectorThreshold.value								= STR_NOT_CONNECTED;
+	
 	FOR(ndx1 = 1; ndx1 <= MAX_LENGTH_ARRAY(DgxDeviceInfo.uInputBoard); ndx1++)
 	{
 		FOR(inputNumber = 1; inputNumber <= MAX_LENGTH_ARRAY(DgxDeviceInfo.uInputBoard[1].uChannel); inputNumber++)
 		{
-			paramBooleanValue	= DgxDeviceInfo.uInputBoard[ndx1].uChannel[inputNumber].cLink;
-			paramDesc					= "'Input board ', ITOA(ndx1), ' input ', ITOA(inputNumber)";
-			paramKey					= "'switcher.input.video.board.', ITOA(ndx1), '.input.', ITOA(inputNumber)";
 			paramName					= "'Input board ', ITOA(ndx1), ' input ', ITOA(inputNumber)";
-	
-		RmsAssetParameterEnqueueBoolean(
+			paramDesc					= paramName;
+			paramKey					= "'switcher.input.video.board.', ITOA(ndx1), '.input.', ITOA(inputNumber)";
+			
+		RmsAssetParameterEnqueueString(
 																			assetClientKey,
 																			paramKey,										// Parameter key
 																			paramName,									// Parameter name
 																			paramDesc,									// Parameter description
 																			RMS_ASSET_PARAM_TYPE_NONE,	// RMS Asset Parameter (Reporting) Type
-																			paramBooleanValue,					// Default value
+																			BOOL_STRING[1+DgxDeviceInfo.uInputBoard[ndx1].uChannel[inputNumber].cLink],				// Default value
+																			'',													// Units
 																			RMS_ALLOW_RESET_NO,					// RMS Asset Parameter Reset
-																			FALSE,											// Reset value
+																			'',													// Reset value
 																			RMS_TRACK_CHANGES_NO				// RMS Asset Parameter History Tracking
 																		);
+
+			ConnectorThreshold.name									= "paramName, ' ',STR_NOT_CONNECTED";
+			RmsAssetParameterThresholdEnqueueEx(assetClientKey, paramKey, ConnectorThreshold)
 		}
 	}
 
 	
 	// number of output boards
+	paramName			= "'Output boards'";
 	paramDesc			= "'Number of Output boards'";
 	paramKey			= "'switcher.output.video.board.count'";
-	paramName			= "'Output boards'";
 
 	RmsAssetParameterEnqueueNumber(
 																	assetClientKey,
@@ -1129,49 +1158,70 @@ DEFINE_FUNCTION RegisterAssetParameters()
 															);
 
 	// Output boards
+		
+	BoardThreshold.comparisonOperator	= RMS_ASSET_PARAM_THRESHOLD_COMPARISON_EQUAL;
+	BoardThreshold.enabled						= TRUE;
+	BoardThreshold.notifyOnRestore		= TRUE;
+	BoardThreshold.notifyOnTrip				= TRUE;
+	BoardThreshold.statusType					= RMS_STATUS_TYPE_MAINTENANCE;
+	BoardThreshold.value							= STR_NOT_CONNECTED;
+
 	FOR(ndx1 = 1; ndx1 <= MAX_LENGTH_ARRAY(DgxDeviceInfo.uOutputBoard); ndx1++)
 	{
-		paramDesc					= "'Output board ', ITOA(ndx1)";
-		paramKey					= "'switcher.output.video.board.', ITOA(ndx1)";
 		paramName					= "'Output board ', ITOA(ndx1)";
+		paramDesc					= "paramName, ' details'";
+		paramKey					= "'switcher.output.video.board.', ITOA(ndx1)";
 
-		RmsAssetParameterEnqueueNumber(
+		RmsAssetParameterEnqueueString(
 																		assetClientKey,
 																		paramKey,										// Parameter key
 																		paramName,									// Parameter name
 																		paramDesc,									// Parameter description
 																		RMS_ASSET_PARAM_TYPE_NONE,	// RMS Asset Parameter (Reporting) Type
-																		DgxDeviceInfo.uOutputBoard[ndx1].nStatus,	// Default value
-																		0,													// Minimum value
-																		0,													// Maximum value
+																		sourceName,									// Default value
 																		'',													// Units
 																		RMS_ALLOW_RESET_NO,					// RMS Asset Parameter Reset
-																		0,													// Reset value
+																		'',													// Reset value
 																		RMS_TRACK_CHANGES_YES				// RMS Asset Parameter History Tracking
-																		);
+																	);
+		BoardThreshold.name								= "paramName, ' type'";
+		RmsAssetParameterThresholdEnqueueEx(assetClientKey,paramKey, BoardThreshold);
 	}
 
 	// Output boards - outputs
+	
+	ConnectorThreshold.comparisonOperator		= RMS_ASSET_PARAM_THRESHOLD_COMPARISON_EQUAL;
+	ConnectorThreshold.delayInterval				= 0;
+	ConnectorThreshold.enabled							= TRUE;
+	ConnectorThreshold.notifyOnRestore			= TRUE;
+	ConnectorThreshold.notifyOnTrip					= TRUE;
+	ConnectorThreshold.statusType						= RMS_STATUS_TYPE_MAINTENANCE;
+	ConnectorThreshold.value								= STR_NOT_CONNECTED;
+
 	FOR(ndx1 = 1; ndx1 <= MAX_LENGTH_ARRAY(DgxDeviceInfo.uOutputBoard); ndx1++)
 	{
 		FOR(inputNumber = 1; inputNumber <= MAX_LENGTH_ARRAY(DgxDeviceInfo.uOutputBoard[1].uChannel); inputNumber++)
 		{
-			paramBooleanValue	= DgxDeviceInfo.uOutputBoard[ndx1].uChannel[inputNumber].cLink;
-			paramDesc					= "'Output board ', ITOA(ndx1), ' output ', ITOA(inputNumber)";
 			paramKey					= "'switcher.output.video.board.', ITOA(ndx1), '.output.', ITOA(inputNumber)";
 			paramName					= "'Output board ', ITOA(ndx1), ' output ', ITOA(inputNumber)";
+			paramDesc					= paramName;
 	
-		RmsAssetParameterEnqueueBoolean(
+		RmsAssetParameterEnqueueString(
 																			assetClientKey,
 																			paramKey,										// Parameter key
 																			paramName,									// Parameter name
 																			paramDesc,									// Parameter description
 																			RMS_ASSET_PARAM_TYPE_NONE,	// RMS Asset Parameter (Reporting) Type
-																			paramBooleanValue,					// Default value
+																			BOOL_STRING[1+DgxDeviceInfo.uOutputBoard[ndx1].uChannel[inputNumber].cLink],				// Default value
+																			'',													// Units
 																			RMS_ALLOW_RESET_NO,					// RMS Asset Parameter Reset
-																			FALSE,											// Reset value
+																			'',													// Reset value
 																			RMS_TRACK_CHANGES_NO				// RMS Asset Parameter History Tracking
 																		);
+
+			ConnectorThreshold.name									= "paramName, ' ', STR_NOT_CONNECTED";
+			RmsAssetParameterThresholdEnqueueEx(assetClientKey, paramKey, ConnectorThreshold)
+
 		}
 	}
 	// submit all parameter registrations
@@ -1434,7 +1484,7 @@ DEFINE_FUNCTION SynchronizeAssetParameters()
 	FOR(ndx1 = 1; ndx1 <= MAX_LENGTH_ARRAY(DgxDeviceInfo.uInputBoard); ndx1++)
 	{
 		paramKey = "'switcher.input.video.board.', ITOA(ndx1)";
-		RmsAssetParameterEnqueueSetValueNumber(assetClientKey, paramKey, DgxDeviceInfo.uInputBoard[ndx1].nStatus);
+		RmsAssetParameterEnqueueSetValue(assetClientKey, paramKey, DgxDeviceInfo.uInputBoard[ndx1].sStatus);
   }
 	
 	// input board inputs
@@ -1443,7 +1493,7 @@ DEFINE_FUNCTION SynchronizeAssetParameters()
 		FOR(ndx2 = 1; ndx2 <= MAX_LENGTH_ARRAY(DgxDeviceInfo.uInputBoard[1].uChannel); ndx2++)
 		{
 			paramKey = "'switcher.input.video.board.', ITOA(ndx1), '.input.', ITOA(ndx2)";
-			RmsAssetParameterEnqueueSetValueBoolean(assetClientKey, paramKey, DgxDeviceInfo.uInputBoard[ndx1].uChannel[ndx2].cLink);
+			RmsAssetParameterEnqueueSetValue(assetClientKey, paramKey, BOOL_STRING[1+DgxDeviceInfo.uInputBoard[ndx1].uChannel[ndx2].cLink]);
 		}
   }
 	
@@ -1455,7 +1505,7 @@ DEFINE_FUNCTION SynchronizeAssetParameters()
 	FOR(ndx1 = 1; ndx1 <= MAX_LENGTH_ARRAY(DgxDeviceInfo.uOutputBoard); ndx1++)
 	{
 		paramKey = "'switcher.output.video.board.', ITOA(ndx1)";
-		RmsAssetParameterEnqueueSetValueNumber(assetClientKey, paramKey, DgxDeviceInfo.uOutputBoard[ndx1].nStatus);
+		RmsAssetParameterEnqueueSetValue(assetClientKey, paramKey, DgxDeviceInfo.uOutputBoard[ndx1].sStatus);
   }
 	
 	// output board inputs
@@ -1464,7 +1514,7 @@ DEFINE_FUNCTION SynchronizeAssetParameters()
 		FOR(ndx2 = 1; ndx2 <= MAX_LENGTH_ARRAY(DgxDeviceInfo.uOutputBoard[1].uChannel); ndx2++)
 		{
 			paramKey = "'switcher.output.video.board.', ITOA(ndx1), '.output.', ITOA(ndx2)";
-			RmsAssetParameterEnqueueSetValueBoolean(assetClientKey, paramKey, DgxDeviceInfo.uOutputBoard[ndx1].uChannel[ndx2].cLink);
+			RmsAssetParameterEnqueueSetValue(assetClientKey, paramKey, BOOL_STRING[1+DgxDeviceInfo.uOutputBoard[ndx1].uChannel[ndx2].cLink]);
 		}
   }
   // submit all the pending parameter updates now
@@ -1521,20 +1571,7 @@ DEFINE_FUNCTION ResetAssetParameterValue(CHAR parameterKey[],CHAR parameterValue
 }
 
 (***********************************************************)
-
 (***********************************************************)
-DEFINE_FUNCTION NotifyDGXMissingBoard(CHAR strNotice[], CHAR cCount)
-{
-	SEND_STRING 0, "strNotice, ITOA(cCount)";
-}
-DEFINE_FUNCTION NotifyDGXPowerFail(CHAR strNotice[], CHAR cCount)
-{
-	SEND_STRING 0, "strNotice, ITOA(cCount)";
-}
-DEFINE_FUNCTION NotifyDGXUnlinked(INTEGER nBoard, INTEGER nChan)
-{
-	SEND_STRING 0, "'No link on board ', ITOA(nBoard), ', Channel ', ITOA(nChan)";
-}
 
 DEFINE_FUNCTION RemoveFromBuffer(CHAR sTemp[], INTEGER nStartPos, INTEGER nEndPos)
 {
@@ -1604,6 +1641,35 @@ DEFINE_FUNCTION ParseDGXSplashScreen3(CHAR sTemp[]) // ~scrv3i3!
 	DebugString('ParseDGXSplashScreen3', sTemp, DEBUG_LEVEL_SUPER_CHATTY);
 }
 
+DEFINE_FUNCTION CHAR[MAX_BUFFER_SIZE] GetDGXBoardTypeFromID(INTEGER nVal) // these values may change with future card revisions
+{
+	STACK_VAR sTemp_[30];
+
+	SWITCH (nVal) 
+	{
+		CASE $0000 : sTemp_ = STR_NOT_CONNECTED;
+		CASE $40A0 : sTemp_ = 'Audio board';	// AIE
+		CASE $C091 : sTemp_ = 'DVI in';   		//
+		CASE $C182 : sTemp_ = 'HDMI in';   	// 49538 hdmi input board
+		CASE $C1C3 : sTemp_ = 'DXLink in';  	// 49603 DXLink input board
+		CASE $C1A1 : sTemp_ = 'Fiber in';    // SC In
+		CASE $80E2 : sTemp_ = 'HDMI out';   	// 32994 hdmi output board
+		CASE $81C2 : sTemp_ = 'DVI out'; 		//
+		CASE $8191 : sTemp_ = 'Fiber out'; 	// SC Out
+		CASE $81B3 : sTemp_ = 'DXLink out'; 	// 33203 DXLink input board
+		DEFAULT		 :
+		{
+			IF(nVal > $CFFF)
+				sTemp_ = 'Output board installed';
+			ELSE IF (nVal > $C000)
+				sTemp_ = 'Input board installed';
+			ELSE
+				sTemp_ = "'Unknown board type: ', ITOA(nVal)";
+		}
+	}
+	RETURN sTemp_;
+}
+
 DEFINE_FUNCTION ParseDGXSplashScreen4(CHAR sTemp[]) // ~scrv3i4! [4:Hardware Boards]
 {
 	STACK_VAR CHAR sTemp_[MAX_BUFFER_SIZE] CHAR sTemp2_[100] CHAR sJunk_[20];
@@ -1618,11 +1684,18 @@ DEFINE_FUNCTION ParseDGXSplashScreen4(CHAR sTemp[]) // ~scrv3i4! [4:Hardware Boa
 		sJunk_ = REMOVE_STRING(sTemp2_, ']', 1);
 		DebugString("'Input Board number ', ITOA(cCount_)", sTemp2_, DEBUG_LEVEL_SUPER_CHATTY);		
 		nVal_		= AHTOI(sTemp2_); // board version - 0000 = no board
-		IF(DgxDeviceInfo.uInputBoard[cCount_].nStatus <> nVal_)
+		sTemp2_ = GetDGXBoardTypeFromID(nVal_);
+		DebugString("'GetDGXBoardTypeFromID().input.'", sTemp2_, DEBUG_LEVEL_SUPER_CHATTY);		
+		IF(cCount_)
 		{
-			DgxDeviceInfo.uInputBoard[cCount_].nStatus = nVal_;
-			DgxAssetParameterSetValueNumber(assetClientKey, "'switcher.input.video.board.', ITOA(cCount_)", DgxDeviceInfo.uInputBoard[cCount_].nStatus);
+			IF(DgxDeviceInfo.uInputBoard[cCount_].sStatus <> sTemp2_)
+			{
+				DgxDeviceInfo.uInputBoard[cCount_].sStatus = sTemp2_;
+				DgxAssetParameterSetValue(assetClientKey, "'switcher.input.video.board.', ITOA(cCount_)", DgxDeviceInfo.uInputBoard[cCount_].sStatus);
+			}
 		}
+		ELSE
+			DebugString("'ERROR: input board ', ITOA(cCount_)", sTemp2_, DEBUG_LEVEL_STANDARD);	
 		sTemp2_ = GetSubString(sTemp_, '[board ', "$0d", REMOVE_DATA_UP_TO_AND_INC_SEARCH);
 	}
 	
@@ -1647,11 +1720,17 @@ DEFINE_FUNCTION ParseDGXSplashScreen4(CHAR sTemp[]) // ~scrv3i4! [4:Hardware Boa
 		sJunk_ = REMOVE_STRING(sTemp2_, ']', 1);
 		DebugString("'output board number ', ITOA(cCount_)", sTemp2_, DEBUG_LEVEL_SUPER_CHATTY);		
 		nVal_		= AHTOI(sTemp2_); // board version - 0000 = no board
-		IF(DgxDeviceInfo.uOutputBoard[cCount_].nStatus <> nVal_)
+		sTemp2_ = GetDGXBoardTypeFromID(nVal_);
+		IF(cCount_)
 		{
-			DgxDeviceInfo.uOutputBoard[cCount_].nStatus = nVal_;
-			DgxAssetParameterSetValueNumber(assetClientKey, "'switcher.output.video.board.', ITOA(cCount_)", DgxDeviceInfo.uOutputBoard[cCount_].nStatus);
+			IF(DgxDeviceInfo.uOutputBoard[cCount_].sStatus <> sTemp2_)
+			{
+				DgxDeviceInfo.uOutputBoard[cCount_].sStatus = sTemp2_;
+				DgxAssetParameterSetValue(assetClientKey, "'switcher.output.video.board.', ITOA(cCount_)", DgxDeviceInfo.uOutputBoard[cCount_].sStatus);
+			}
 		}
+		ELSE
+			DebugString("'ERROR: output board ', ITOA(cCount_)", sTemp2_, DEBUG_LEVEL_STANDARD);	
 		sTemp2_ = GetSubString(sTemp_, '[board ', "$0d", REMOVE_DATA_UP_TO_AND_INC_SEARCH);
 	}
 	
@@ -1908,11 +1987,11 @@ BCPU1:
 			IF(DgxDeviceInfo.uInputBoard[cBoard].uChannel[cCount_].cLink <> cLinked_)
 			{
 				DgxDeviceInfo.uInputBoard[cBoard].uChannel[cCount_].cLink = cLinked_;
-				//DebugVal("sTemp2_", TYPE_CAST(cLinked_), DEBUG_LEVEL_STANDARD);
-				DgxAssetParameterSetValueBoolean(assetClientKey, 
-																				"'switcher.input.video.board.', ITOA(cBoard), '.input.', ITOA(cCount_)",
-																				cLinked_);
-																				//DgxDeviceInfo.uInputBoard[cBoard].uChannel[cCount_].cLink);
+				DebugVal("sTemp2_", TYPE_CAST(cLinked_), DEBUG_LEVEL_STANDARD);
+				DgxAssetParameterSetValue(assetClientKey, 
+																	"'switcher.input.video.board.', ITOA(cBoard), '.input.', ITOA(cCount_)",
+																	BOOL_STRING[1+cLinked_]);
+																	//DgxDeviceInfo.uInputBoard[cBoard].uChannel[cCount_].cLink);
 			}
 		}
 		ELSE
@@ -1930,11 +2009,11 @@ BCPU1:
 				IF(DgxDeviceInfo.uOutputBoard[cOutputBoardNum_].uChannel[cCount_].cLink <> cLinked_)
 				{
 					DgxDeviceInfo.uOutputBoard[cOutputBoardNum_].uChannel[cCount_].cLink = cLinked_;
-					//DebugVal("sTemp2_,'-update'", TYPE_CAST(cLinked_), DEBUG_LEVEL_STANDARD);
-					DgxAssetParameterSetValueBoolean(assetClientKey, 
-																					"'switcher.output.video.board.', ITOA(cOutputBoardNum_), '.output.', ITOA(cCount_)",
-																					cLinked_);
-																					//DgxDeviceInfo.uOutputBoard[cOutputBoardNum_].uChannel[cCount_].cLink);
+					DebugVal("sTemp2_,'-update'", TYPE_CAST(cLinked_), DEBUG_LEVEL_STANDARD);
+					DgxAssetParameterSetValue(assetClientKey, 
+																		"'switcher.output.video.board.', ITOA(cOutputBoardNum_), '.output.', ITOA(cCount_)",
+																		BOOL_STRING[1+cLinked_]);
+																		//DgxDeviceInfo.uOutputBoard[cOutputBoardNum_].uChannel[cCount_].cLink);
 					[vdvDEV, 100+(cOutputBoardNum_-1)*4+cCount_] = DgxDeviceInfo.uOutputBoard[cOutputBoardNum_].uChannel[cCount_].cLink; // feedback. Channels 101 - 64 are input board link status
 				}
 			}
@@ -2051,6 +2130,42 @@ DEFINE_FUNCTION ParseDGXData()
 	cBusy = 0;
 }
 
+DEFINE_FUNCTION SetDebug (CHAR sCommand_[])
+{
+  cDebug = ATOI(sCommand_)
+  SEND_STRING vdvDEV, "'DEBUG=', sCommand_"
+}
+
+DEFINE_FUNCTION ReadCommand (CHAR sCommand_[])
+STACK_VAR CHAR sMsg_[32]
+{
+  sMsg_ = REMOVE_STRING (sCommand_, '=', 1);
+  SET_LENGTH_STRING (sMsg_, LENGTH_STRING (sMsg_) - 1);
+  SWITCH (sMsg_)
+  {   
+		CASE 'DEBUG': SetDebug(sCommand_);
+  }
+}
+
+DEFINE_FUNCTION ReadQuery (CHAR sCommand_[])
+STACK_VAR CHAR sMsg_[32]
+{
+  sMsg_ = REMOVE_STRING (sCommand_, '?', 1)
+  SET_LENGTH_STRING (sMsg_, LENGTH_STRING (sMsg_) - 1)
+  SWITCH (sMsg_)
+  {   
+		CASE 'DEBUG': SEND_STRING vdvDEV, "'DEBUG=', ITOA(cDebug)";
+  }
+}
+
+DEFINE_FUNCTION CommandIn(CHAR sCommand_[])
+{
+  IF(FIND_STRING(sCommand_, '=', 1))
+		ReadCommand(sCommand_)
+  ELSE IF(FIND_STRING(sCommand_, '?', 1))
+		ReadQuery(sCommand_)
+}
+
 DEFINE_FUNCTION RemoveLeadingNonPrintable(CHAR sString[])
 {
 	STACK_VAR INTEGER nIdx_;
@@ -2065,8 +2180,7 @@ DEFINE_FUNCTION RemoveLeadingNonPrintable(CHAR sString[])
 		sString = RIGHT_STRING(sString, LENGTH_STRING(sString)-nIdx_);
 }
 
-DEFINE_FUNCTION BreakStringIntoChunks(CHAR sSource[], INTEGER iChunkSize)
-{
+DEFINE_FUNCTION BreakStringIntoChunks(CHAR sSource[], INTEGER iChunkSize){
 	STACK_VAR CHAR sTemp_[MAX_BUFFER_SIZE] CHAR sReturn_[MAX_BUFFER_SIZE] CHAR sTemp2_[10];
 	STACK_VAR INTEGER iStart_ INTEGER iEnd_;
 
@@ -2123,14 +2237,14 @@ DEFINE_FUNCTION CHAR[MAX_BUFFER_SIZE] GetSubString(CHAR sSource[], CHAR sStart[]
 
 DEFINE_FUNCTION DebugVal(CHAR strHead[], INTEGER nVal, INTEGER iDebugLevel)	
 {
-	IF (DEBUG_LEVEL & iDebugLevel)
+	IF (cDebug & iDebugLevel)
 		SEND_STRING 0, "strHead,': ',ITOA(nVal)"
 }
 
 DEFINE_FUNCTION DebugString(CHAR strHead[], CHAR strBody[], INTEGER iDebugLevel)
 {
 	STACK_VAR CHAR strTemp_[120];
-	IF (DEBUG_LEVEL & iDebugLevel)
+	IF (cDebug & iDebugLevel)
 	{
 		strTemp_ = "strHead,':LEN=',ITOA(LENGTH_STRING(strBody)),':'";
 		IF(LENGTH_STRING(strBody) > MAX_LENGTH_STRING(strTemp_))
@@ -2242,6 +2356,12 @@ DATA_EVENT[dvDgxSerial]
 	}
 }
 
+DATA_EVENT[vdvDEV]
+{
+	COMMAND:
+		CommandIn(DATA.TEXT);
+}
+
 BUTTON_EVENT[vdvDEV, 0] // testing
 {
 	PUSH:
@@ -2251,6 +2371,7 @@ BUTTON_EVENT[vdvDEV, 0] // testing
 		ELSE
 			SWITCH(BUTTON.INPUT.CHANNEL)
 			{
+// Get BCPU data (channels linked)
 				//CASE 1-7: // send "'~scri1v3!'";
 				//CASE 8: // Get BCPU data (channels linked)
 				//CASE 9: // pause timeline
